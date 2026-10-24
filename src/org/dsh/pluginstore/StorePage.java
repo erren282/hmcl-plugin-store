@@ -40,6 +40,15 @@ public final class StorePage extends VBox implements
         org.jackhuang.hmcl.ui.decorator.DecoratorPage,
         org.jackhuang.hmcl.ui.construct.PageAware {
 
+    /// Longest description kept, in characters; roughly two lines at the card's width.
+    private static final int SUMMARY_MAX_CHARS = 110;
+
+    /// Height cap for the description text, in pixels (about two 12.5px lines).
+    private static final double SUMMARY_MAX_HEIGHT = 34;
+
+    /// Vertical padding the description box adds around the text.
+    private static final double SUMMARY_BOX_PADDING = 12;
+
     /// Page state reported to the launcher's title bar.
     private final javafx.beans.property.ReadOnlyObjectWrapper<org.jackhuang.hmcl.ui.decorator.DecoratorPage.State> state =
             new javafx.beans.property.ReadOnlyObjectWrapper<>(
@@ -251,11 +260,20 @@ public final class StorePage extends VBox implements
         Label stars = new Label("★ " + entry.stars());
         stars.getStyleClass().add("store-stars");
 
-        Label summary = new Label(entry.summary() == null || entry.summary().isBlank()
-                ? "（该仓库没有简介）"
-                : entry.summary());
+        Label summary = new Label(shorten(entry.summary()));
         summary.getStyleClass().add("store-summary");
         summary.setWrapText(true);
+        // Two lines at most: the box below caps the height so a long description cannot stretch
+        // the whole card. `shorten` keeps the text near that bound so nothing is clipped abruptly.
+        summary.setMaxHeight(SUMMARY_MAX_HEIGHT);
+
+        StackPane summaryBox = new StackPane(summary);
+        summaryBox.getStyleClass().add("store-summary-box");
+        summaryBox.setMaxWidth(Double.MAX_VALUE);
+        summaryBox.setMaxHeight(SUMMARY_MAX_HEIGHT + SUMMARY_BOX_PADDING);
+        // Inset from the card's left edge so the description reads as a nested block.
+        VBox.setMargin(summaryBox, new Insets(0, 0, 0, 18));
+        StackPane.setAlignment(summary, Pos.CENTER_LEFT);
 
         HBox titleRow = new HBox(10, name, stars, StoreWidgets.spacer());
         titleRow.setAlignment(Pos.CENTER_LEFT);
@@ -300,10 +318,28 @@ public final class StorePage extends VBox implements
         HBox footer = new HBox(8, toggle, install, progress);
         footer.setAlignment(Pos.CENTER_LEFT);
 
-        VBox card = new VBox(8, titleRow, summary, details, footer);
+        VBox card = new VBox(8, titleRow, summaryBox, details, footer);
         card.getStyleClass().add("store-card");
         card.setMaxWidth(Double.MAX_VALUE);
         return card;
+    }
+
+    /// Shortens a repository description so a card cannot grow tall.
+    ///
+    /// <p>JavaFX labels have no "maximum lines" setting, and a wrapped label simply grows. Cutting
+    /// the text near the two-line mark keeps the card compact and lets the full text stay
+    /// available through the expanded README.</p>
+    ///
+    /// @param text the raw description, possibly `null`
+    /// @return the description to display
+    private static String shorten(String text) {
+        if (text == null || text.isBlank())
+            return "（该仓库没有简介）";
+
+        String trimmed = text.strip().replaceAll("\\s+", " ");
+        if (trimmed.length() <= SUMMARY_MAX_CHARS)
+            return trimmed;
+        return trimmed.substring(0, SUMMARY_MAX_CHARS).stripTrailing() + "…";
     }
 
     /// Lazily loads the README into a card's detail area and renders it as Markdown.

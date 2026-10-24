@@ -1,4 +1,4 @@
-﻿/*
+/*
  * 商店插件样式
  *
  * 只作用于插件自己的 .store-* 类，不影响启动器原有界面。
@@ -128,6 +128,18 @@
 .store-summary {
     -fx-font-size: 12.5px;
     -fx-text-fill: #737373;
+}
+
+/* 简介收在一个小方框里：浅底、圆角、内缩并限制高度，
+   避免长简介把卡片撑得很高；左侧额外缩进使其与卡片标题错开。 */
+.store-summary-box {
+    -fx-background-color: #F4F7FC;
+    -fx-background-radius: 6px;
+    -fx-border-color: #E2EAF5;
+    -fx-border-width: 1px;
+    -fx-border-radius: 6px;
+    -fx-padding: 6 10 6 10;
+    -fx-max-width: infinity;
 }
 
 .store-details {
