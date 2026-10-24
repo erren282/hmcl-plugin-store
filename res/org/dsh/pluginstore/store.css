@@ -134,78 +134,26 @@
     -fx-padding: 6 0 0 0;
 }
 
-/* README 渲染区：套一层滚动容器，长文档不会把卡片撑爆 */
-.store-readme-scroll {
+/* README 区域：不再自带滚动条，直接内联在卡片里。
+   横向撑满，纵向由外层 PluginPage 的 ScrollPane 统一滚动。 */
+.store-readme {
     -fx-background-color: #FAFBFD;
     -fx-background-radius: 4px;
     -fx-border-color: #EDF1F7;
     -fx-border-width: 1px;
     -fx-border-radius: 4px;
     -fx-padding: 8 10 8 10;
-}
-
-.store-readme-scroll > .viewport {
-    -fx-background-color: #FAFBFD;
-}
-
-.store-readme-scroll > .scroll-bar:vertical {
-    -fx-background-color: transparent;
-    -fx-pref-width: 8px;
-}
-
-.store-readme-scroll > .scroll-bar:vertical > .thumb {
-    -fx-background-color: #C9D6E8;
-    -fx-background-radius: 4px;
-}
-
-.store-readme-scroll > .scroll-bar:vertical > .thumb:hover {
-    -fx-background-color: #A9BEDB;
-}
-
-.store-readme-scroll > .scroll-bar > .increment-button,
-.store-readme-scroll > .scroll-bar > .decrement-button {
-    -fx-padding: 0;
-    -fx-pref-height: 0;
+    -fx-max-width: infinity;
 }
 
 /* Markdown 渲染出来的文字统一字号与颜色 */
-.store-readme-scroll .label,
-.store-readme-scroll .text {
+.store-readme .label,
+.store-readme .text {
     -fx-font-size: 12.5px;
     -fx-text-fill: #4A4A4A;
 }
 
-.store-scroll {
-    -fx-background-color: transparent;
-    -fx-background: transparent;
-}
-
-.store-scroll > .viewport {
-    -fx-background-color: transparent;
-}
-
-/* 主列表的滚动条：细、无箭头、悬停加深 */
-.store-scroll > .scroll-bar:vertical {
-    -fx-background-color: transparent;
-    -fx-pref-width: 10px;
-}
-
-.store-scroll > .scroll-bar:vertical > .thumb {
-    -fx-background-color: #CBD8EA;
-    -fx-background-radius: 5px;
-}
-
-.store-scroll > .scroll-bar:vertical > .thumb:hover {
-    -fx-background-color: #A9BEDB;
-}
-
-.store-scroll > .scroll-bar > .increment-button,
-.store-scroll > .scroll-bar > .decrement-button {
-    -fx-padding: 0;
-    -fx-pref-height: 0;
-}
-
-.store-scroll > .scroll-bar:vertical > .track,
-.store-scroll > .scroll-bar:vertical > .track-background {
+/* 页面本体：不设自己的滚动条，高度由宿主视口决定 */
+.store-page {
     -fx-background-color: transparent;
 }

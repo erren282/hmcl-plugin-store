@@ -11,9 +11,11 @@ import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
+import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import org.jackhuang.hmcl.plugin.PluginContext;
@@ -30,7 +32,13 @@ import java.util.Locale;
 ///
 /// <p>One card per plugin repository: name, star count, a one-line summary and an install
 /// button. Expanding a card renders that repository's README as Markdown through the launcher's
-/// own [MarkdownRenderer], so headings, lists, code blocks and links look native.</p>
+/// own [MarkdownRenderer].</p>
+///
+/// <p><b>No nested scrolling.</b> The launcher hosts plugin pages inside `PluginPage`, which is
+/// itself a [ScrollPane]. Adding a second scroll pane here would swallow the wheel events and
+/// scroll an almost invisible inner viewport, which reads as "scrolling does not work". This page
+/// therefore grows to its natural height and leaves all scrolling to the host, including the
+/// README block, which is inlined instead of boxed in its own scroller.</p>
 public final class StorePage extends VBox {
 
     private final PluginContext context;
@@ -40,7 +48,6 @@ public final class StorePage extends VBox {
     private final VBox cards = new VBox(10);
     private final Label statusLabel = new Label();
     private final TextField searchField = new TextField();
-    private final ScrollPane scroll = new ScrollPane();
 
     /// Every entry fetched so far, so the search box can filter without refetching.
     private final List<StoreSource.Entry> entries = new ArrayList<>();
@@ -51,11 +58,48 @@ public final class StorePage extends VBox {
         this.installer = new StoreInstaller(context);
 
         getStyleClass().add("store-page");
-        setPadding(new Insets(16));
+        setPadding(new Insets(4, 8, 16, 0));
         setSpacing(12);
+        // Fill the host's width and let the host's scroll pane grow with the content.
+        setMaxWidth(Double.MAX_VALUE);
+        setFillWidth(true);
 
-        getChildren().addAll(buildHeader(), buildStatusRow(), buildBody());
+        getChildren().addAll(buildHeader(), buildStatusRow(), cards);
+        fillHostViewport();
         reload();
+    }
+
+    /// Stretches the page to the full height of the launcher's content area.
+    ///
+    /// <p>`PluginPage` puts plugin pages inside a `VBox` in a `ScrollPane`, so a page only gets
+    /// its preferred height — a short list would leave the store floating at the top of the
+    /// window instead of filling it. Binding the minimum height to the host viewport makes the
+    /// page cover the whole area, and the binding still lets it grow when the cards exceed one
+    /// screen.</p>
+    ///
+    /// <p>The host scroll pane only exists once the node is attached, so this waits for the
+    /// scene and then walks up the parent chain.</p>
+    private void fillHostViewport() {
+        sceneProperty().addListener((observable, oldScene, newScene) -> {
+            if (newScene == null)
+                return;
+            Node ancestor = getParent();
+            ScrollPane host = null;
+            while (ancestor != null) {
+                if (ancestor instanceof ScrollPane pane) {
+                    host = pane;
+                    break;
+                }
+                ancestor = ancestor.getParent();
+            }
+            if (host == null)
+                return;
+
+            var viewport = host.viewportBoundsProperty();
+            minHeightProperty().unbind();
+            minHeightProperty().bind(javafx.beans.binding.Bindings.createDoubleBinding(
+                    () -> Math.max(0, viewport.get().getHeight() - 24), viewport));
+        });
     }
 
     // -------------------------------------------------------------------- header
@@ -84,6 +128,7 @@ public final class StorePage extends VBox {
 
         HBox row = new HBox(12, texts, StoreWidgets.spacer(), actions);
         row.setAlignment(Pos.CENTER_LEFT);
+        row.setPadding(new Insets(0, 0, 4, 0));
         return row;
     }
 
@@ -93,25 +138,6 @@ public final class StorePage extends VBox {
     private Node buildStatusRow() {
         statusLabel.getStyleClass().add("store-status");
         return new HBox(statusLabel);
-    }
-
-    /// Builds the scrollable card area.
-    ///
-    /// @return the scroll pane
-    private Node buildBody() {
-        cards.setFillWidth(true);
-        cards.setPadding(new Insets(2, 8, 12, 2));
-
-        scroll.setContent(cards);
-        scroll.setFitToWidth(true);
-        scroll.getStyleClass().add("store-scroll");
-        scroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
-        scroll.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
-        // The launcher's own helper gives wheel scrolling a smooth, eased feel on every platform.
-        FXUtils.smoothScrolling(scroll);
-        StoreWidgets.installSmoothWheel(scroll);
-        VBox.setVgrow(scroll, Priority.ALWAYS);
-        return scroll;
     }
 
     // --------------------------------------------------------------------- data
@@ -237,6 +263,7 @@ public final class StorePage extends VBox {
 
         VBox card = new VBox(8, titleRow, summary, details, footer);
         card.getStyleClass().add("store-card");
+        card.setMaxWidth(Double.MAX_VALUE);
         return card;
     }
 
@@ -259,46 +286,52 @@ public final class StorePage extends VBox {
 
                     Node rendered;
                     try {
-                        rendered = MarkdownRenderer.render(readme);
+                        rendered = inline(MarkdownRenderer.render(readme));
                     } catch (Throwable e) {
                         // A malformed README must not break the page; fall back to plain text.
                         context.logWarning("README 渲染失败，改为纯文本：" + e);
-                        javafx.scene.control.TextArea area = new javafx.scene.control.TextArea(readme);
+                        TextArea area = new TextArea(readme);
                         area.setEditable(false);
                         area.setWrapText(true);
-                        area.setPrefRowCount(10);
+                        area.setMinHeight(Region.USE_PREF_SIZE);
                         rendered = area;
                     }
 
-                    // MarkdownRenderer already returns a scroll pane; only size it and give it
-                    // the same eased wheel behaviour as the list.
-                    Node readmeView = rendered;
-                    if (readmeView instanceof ScrollPane markdownScroll) {
-                        markdownScroll.setFitToWidth(true);
-                        markdownScroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
-                        markdownScroll.setPrefViewportHeight(260);
-                        markdownScroll.setMaxHeight(320);
-                        markdownScroll.getStyleClass().add("store-readme-scroll");
-                        FXUtils.smoothScrolling(markdownScroll);
-                        StoreWidgets.installSmoothWheel(markdownScroll);
-                    } else {
-                        ScrollPane wrapper = new ScrollPane(readmeView);
-                        wrapper.setFitToWidth(true);
-                        wrapper.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
-                        wrapper.setPrefViewportHeight(260);
-                        wrapper.getStyleClass().add("store-readme-scroll");
-                        FXUtils.smoothScrolling(wrapper);
-                        StoreWidgets.installSmoothWheel(wrapper);
-                        readmeView = wrapper;
-                    }
-
-                    details.getChildren().add(readmeView);
+                    VBox readmeBox = new VBox(rendered);
+                    readmeBox.getStyleClass().add("store-readme");
+                    readmeBox.setFillWidth(true);
+                    readmeBox.setMaxWidth(Double.MAX_VALUE);
+                    details.getChildren().add(readmeBox);
 
                     Label link = new Label("在 GitHub 上查看：" + entry.homepage());
                     link.getStyleClass().add("store-link");
                     link.setOnMouseClicked(event -> FXUtils.openLink(entry.homepage()));
                     details.getChildren().add(link);
                 }));
+    }
+
+    /// Flattens the renderer's own scroll pane so the README flows inline.
+    ///
+    /// <p>[MarkdownRenderer#render] returns a [ScrollPane] sized for a fixed viewport. Left as is,
+    /// that becomes a second scroller inside the host's scroller, and the wheel events get stuck
+    /// in the inner one. Keeping only its content removes the nesting.</p>
+    ///
+    /// @param rendered the node returned by the renderer
+    /// @return the content node, ready to be placed inline
+    private static Node inline(Node rendered) {
+        if (!(rendered instanceof ScrollPane inner))
+            return rendered;
+
+        Node content = inner.getContent();
+        inner.setContent(null); // detach so the scroll pane cannot swallow wheel input
+        if (content == null)
+            return new Label();
+
+        if (content instanceof Region region) {
+            region.setMaxWidth(Double.MAX_VALUE);
+            region.setMinHeight(Region.USE_PREF_SIZE);
+        }
+        return content;
     }
 
     // ------------------------------------------------------------------ install
