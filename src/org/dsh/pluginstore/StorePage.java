@@ -130,48 +130,26 @@ public final class StorePage extends VBox implements
         return row;
     }
 
-    /// Builds the scrollable card area.
+    /// Builds the card area as plain, non-scrolling content.
     ///
-    /// <p>The store owns the whole window, so this is the page's only scroller. Scrolling is
-    /// driven by the launcher's own `FXUtils.smoothScrolling`, which already animates the wheel;
-    /// adding a second handler on top would fight it for `vvalue` and make scrolling stutter.</p>
+    /// <p>No scroll pane here on purpose. The launcher hosts plugin pages inside
+    /// `PluginPageProxy`, which already wraps the page in its own `ScrollPane`; adding a second
+    /// one nested the two, and the inner pane swallowed the wheel events so nothing scrolled
+    /// until a card was expanded. Emitting plain content lets the host's single scroller carry
+    /// the whole page from the first card to the last.</p>
     ///
-    /// @return the scroll pane
+    /// @return the content node
     private Node buildScrollableBody() {
         statusLabel.getStyleClass().add("store-status");
 
         VBox content = new VBox(10, statusLabel, cards);
+        content.getStyleClass().add("store-body");
         content.setPadding(new Insets(12, 16, 16, 16));
         content.setFillWidth(true);
+        content.setMaxWidth(Double.MAX_VALUE);
 
-        ScrollPane scroll = new ScrollPane(content);
-        scroll.setFitToWidth(true);
-        scroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
-        scroll.getStyleClass().add("store-scroll");
-        enableSmoothScrolling(scroll);
-        VBox.setVgrow(scroll, Priority.ALWAYS);
-        return scroll;
-    }
-
-    /// Attaches the launcher's eased wheel scrolling to a scroll pane.
-    ///
-    /// <p>`FXUtils.smoothScrolling` is the public entry point but it short-circuits when the user
-    /// disables launcher animations, which silently removed smooth scrolling from this page.
-    /// The underlying helper is package-private, so it is invoked reflectively; if that fails for
-    /// any reason the public helper is used as a fallback rather than losing scrolling entirely.</p>
-    ///
-    /// @param scroll the scroll pane to tune
-    private static void enableSmoothScrolling(ScrollPane scroll) {
-        try {
-            Class<?> utils = Class.forName("org.jackhuang.hmcl.ui.ScrollUtils");
-            var method = utils.getDeclaredMethod("addSmoothScrolling", ScrollPane.class);
-            method.setAccessible(true);
-            method.invoke(null, scroll);
-            return;
-        } catch (Throwable ignored) {
-            // Fall through to the public helper.
-        }
-        FXUtils.smoothScrolling(scroll);
+        VBox.setVgrow(content, Priority.ALWAYS);
+        return content;
     }
 
     // --------------------------------------------------------------------- data
@@ -346,9 +324,10 @@ public final class StorePage extends VBox implements
 
     /// Flattens the renderer's own scroll pane so the README flows inline.
     ///
-    /// <p>[MarkdownRenderer#render] returns a [ScrollPane] sized for a fixed viewport. Left as is,
-    /// that becomes a second scroller inside the host's scroller, and the wheel events get stuck
-    /// in the inner one. Keeping only its content removes the nesting.</p>
+    /// <p>[MarkdownRenderer#render] returns a [ScrollPane] with a fixed viewport. Left as is that
+    /// becomes a second scroller inside the page, so the wheel gets stuck in it and the reader has
+    /// to scroll a small box before the page moves. Only its content is kept, which makes the
+    /// README an ordinary block of the page and lets the single outer scroller carry it.</p>
     ///
     /// @param rendered the node returned by the renderer
     /// @return the content node, ready to be placed inline
@@ -363,7 +342,10 @@ public final class StorePage extends VBox implements
 
         if (content instanceof Region region) {
             region.setMaxWidth(Double.MAX_VALUE);
+            // Let the block grow to its natural height instead of a viewport-sized box.
             region.setMinHeight(Region.USE_PREF_SIZE);
+            region.setPrefHeight(Region.USE_COMPUTED_SIZE);
+            region.setMaxHeight(Double.MAX_VALUE);
         }
         return content;
     }

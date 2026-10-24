@@ -1,4 +1,4 @@
-/*
+﻿/*
  * 商店插件样式
  *
  * 只作用于插件自己的 .store-* 类，不影响启动器原有界面。
@@ -166,36 +166,18 @@
 }
 
 /* 列表滚动区：本页是唯一滚动容器，不嵌套 */
-.store-scroll {
+/* 内容区：普通容器，不设滚动条。整页滚动由 PluginPageProxy 的宿主 ScrollPane 统一接管。
+   这里只保证它横向撑满、纵向按内容自然增长。 */
+.store-body {
     -fx-background-color: transparent;
-    -fx-background: transparent;
+    -fx-max-width: infinity;
 }
 
-.store-scroll > .viewport {
-    -fx-background-color: transparent;
+/* 卡片与详情块都只作为普通内容，不产生独立滚动视口 */
+.store-card {
+    -fx-max-width: infinity;
 }
 
-.store-scroll > .scroll-bar:vertical {
-    -fx-background-color: transparent;
-    -fx-pref-width: 10px;
-}
-
-.store-scroll > .scroll-bar:vertical > .thumb {
-    -fx-background-color: #CBD8EA;
-    -fx-background-radius: 5px;
-}
-
-.store-scroll > .scroll-bar:vertical > .thumb:hover {
-    -fx-background-color: #A9BEDB;
-}
-
-.store-scroll > .scroll-bar > .increment-button,
-.store-scroll > .scroll-bar > .decrement-button {
-    -fx-padding: 0;
-    -fx-pref-height: 0;
-}
-
-.store-scroll > .scroll-bar:vertical > .track,
-.store-scroll > .scroll-bar:vertical > .track-background {
-    -fx-background-color: transparent;
+.store-readme {
+    -fx-max-width: infinity;
 }
