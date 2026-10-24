@@ -47,6 +47,15 @@ public final class StoreInstaller {
         /// @param description the installed plugin's manifest
         void onInstalled(PluginDescription description);
 
+        /// Called when the update was queued instead of applied.
+        ///
+        /// <p>Happens when the old jar is still loaded: the swap runs on the next launcher start.
+        /// This is a normal outcome, not a failure.</p>
+        ///
+        /// @param pluginId the plugin whose update was staged
+        default void onStaged(String pluginId) {
+        }
+
         /// Called when the install failed.
         ///
         /// @param message a message suitable for showing to the user
@@ -65,8 +74,22 @@ public final class StoreInstaller {
 
     private final PluginContext context;
 
+    /// Stages updates that cannot be applied while the old jar is loaded.
+    private final PendingUpdates pending;
+
     StoreInstaller(PluginContext context) {
         this.context = context;
+        this.pending = new PendingUpdates(context);
+    }
+
+    /// Applies updates staged by earlier sessions.
+    ///
+    /// <p>Called early in the store plugin's own start-up, after the launcher has discarded the
+    /// previous class loaders, so other plugins' jars are unlocked again.</p>
+    void applyPendingUpdates() {
+        int applied = pending.applyAll();
+        if (applied > 0)
+            context.logInfo("已应用 " + applied + " 个待安装更新，重启启动器后生效");
     }
 
     /// Downloads and installs one plugin.
@@ -87,12 +110,21 @@ public final class StoreInstaller {
                 downloadWithFallback(asset, temporary, callback);
 
                 // `PluginManager.install` refuses a plugin whose id is already installed, so an
-                // upgrade or downgrade has to remove the old jar first. The download is complete at
-                // this point, which keeps the window where no version is present as short as
-                // possible.
-                removeInstalledVersion(temporary);
+                // upgrade or downgrade has to remove the old jar first. When that jar is still
+                // loaded by the launcher the removal fails, and the update is staged for the next
+                // start instead of failing outright.
+                try {
+                    removeInstalledVersion(temporary);
+                } catch (PluginInUseException locked) {
+                    String pluginId = readPluginId(temporary);
+                    if (pluginId == null || !pending.stage(pluginId, temporary, asset.name()))
+                        throw locked;
+                    throw new StagedException(pluginId);
+                }
 
                 return PluginManager.install(temporary);
+            } catch (StagedException staged) {
+                throw staged;
             } catch (Exception e) {
                 throw new InstallException(describe(fullName, e), e);
             } finally {
@@ -108,14 +140,22 @@ public final class StoreInstaller {
             if (throwable == null) {
                 context.logInfo("已安装插件：" + description.getId() + " " + description.getVersion());
                 callback.onInstalled(description);
-            } else {
-                Throwable cause = throwable.getCause() != null ? throwable.getCause() : throwable;
-                String message = cause instanceof InstallException
-                        ? cause.getMessage()
-                        : String.valueOf(cause.getMessage());
-                context.logWarning("安装插件失败：" + message);
-                callback.onFailed(message);
+                return;
             }
+
+            Throwable cause = throwable.getCause() != null ? throwable.getCause() : throwable;
+            if (cause instanceof StagedException staged) {
+                // Not a failure: the update is queued and will be applied on the next start.
+                context.logInfo("已暂存更新，下次启动生效：" + staged.getMessage());
+                callback.onStaged(staged.getMessage());
+                return;
+            }
+
+            String message = cause instanceof InstallException
+                    ? cause.getMessage()
+                    : String.valueOf(cause.getMessage());
+            context.logWarning("安装插件失败：" + message);
+            callback.onFailed(message);
         }));
     }
 
@@ -210,9 +250,55 @@ public final class StoreInstaller {
                 if (!newId.equals(existingId))
                     continue;
 
-                Files.deleteIfExists(existing);
+                deleteOrExplain(existing);
                 context.logInfo("已移除旧版本插件：" + existing.getFileName() + "（" + newId + "）");
             }
+        }
+    }
+
+    /// Deletes a loaded plugin jar, turning a Windows lock into a readable message.
+    ///
+    /// <p>The launcher keeps every loaded plugin jar open for the whole session, and Windows
+    /// refuses both deletion and renaming of such a file. A running plugin therefore cannot be
+    /// replaced in place, so the failure is reported as an actionable instruction instead of the
+    /// bare "另一个程序正在使用此文件" that Windows produces.</p>
+    ///
+    /// @param jar the installed jar to remove
+    /// @throws IOException when the file is locked or cannot be deleted
+    private static void deleteOrExplain(Path jar) throws IOException {
+        try {
+            Files.deleteIfExists(jar);
+        } catch (IOException e) {
+            // A locked jar is expected while the plugin is loaded; the caller stages the update.
+            throw new PluginInUseException(jar, e);
+        }
+    }
+
+    /// Raised when an installed plugin jar cannot be removed because it is loaded.
+    static final class PluginInUseException extends IOException {
+
+        PluginInUseException(Path jar, Throwable cause) {
+            super("插件 " + jar.getFileName() + " 正在被启动器使用", cause);
+        }
+    }
+
+    /// Raised when an update was queued instead of applied.
+    static final class StagedException extends RuntimeException {
+
+        StagedException(String pluginId) {
+            super(pluginId);
+        }
+    }
+
+    /// Reads a jar's plugin id, tolerating a malformed file.
+    ///
+    /// @param jar the jar
+    /// @return the id, or `null`
+    private static String readPluginId(Path jar) {
+        try {
+            return org.jackhuang.hmcl.plugin.PluginDescription.readFromJar(jar).getId();
+        } catch (Throwable e) {
+            return null;
         }
     }
 

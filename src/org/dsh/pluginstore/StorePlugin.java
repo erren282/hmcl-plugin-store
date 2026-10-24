@@ -44,8 +44,15 @@ public final class StorePlugin extends HmclPlugin {
     /// The style sheet URL applied to the scene root, or `null`.
     private String styleUrl;
 
-    /// The single store page instance, reused so its state survives navigation.
+    /// The single store page instance, created once and reused.
     private StorePage storePage;
+
+    /// Manages the title bar restart button shown while updates are staged.
+    ///
+    /// <p>Created in `onEnable`, not as a field initialiser: a field initialiser runs during
+    /// construction, and `getContext()` throws until the launcher has attached the plugin to its
+    /// context — which happens after the constructor returns.</p>
+    private RestartButton restartButton;
 
     /// The plugin-module entry that opens the store full-screen.
     ///
@@ -106,7 +113,10 @@ public final class StorePlugin extends HmclPlugin {
                 return;
 
             if (storePage == null)
-                storePage = new StorePage(getContext());
+                storePage = new StorePage(getContext(), () -> {
+                if (restartButton != null)
+                    restartButton.refresh();
+            });
 
             // Re-navigating to the page already on top would be a no-op, but pushing it again
             // while it is already current would leave duplicates needing extra back presses.
@@ -210,8 +220,65 @@ public final class StorePlugin extends HmclPlugin {
         PluginMenuService.registerPage(page);
         pinToTop();
         installStyles();
+
+        // Updates are applied by the external script written when the user pressed restart, not
+        // here: by this point the launcher has mapped every plugin jar, so nothing can be replaced.
+        // Trying anyway left the old jar beside a freshly copied new one — two versions of the same
+        // plugin, which needed extra restarts to settle.
+        try {
+            cleanUpAfterScript();
+        } catch (Throwable e) {
+            getContext().logWarning("清理更新残留失败：" + e);
+        }
+
+        // Show the restart button straight away if anything is still waiting: the swap needs one
+        // more start, and the user should not have to guess why the version did not change.
+        try {
+            restartButton = new RestartButton(getContext());
+            restartButton.refresh();
+        } catch (Throwable e) {
+            getContext().logWarning("无法初始化重启按钮：" + e);
+        }
+
         getContext().logInfo("插件商店已启用（设置 → 插件 → 插件页面首位），数据源：GitHub topic "
                 + StoreSource.TOPIC);
+    }
+
+    /// Returns the helper that manages the title bar's restart button.
+    ///
+    /// @return the restart button helper
+    /// Removes leftovers the update script could not delete itself.
+    ///
+    /// <p>The script deletes its own staging directory, but a jar it could not overwrite stays
+    /// there. Clearing it on start-up keeps the plugin data directory tidy and — more importantly —
+    /// makes sure a stale entry never replays an old swap.</p>
+    private void cleanUpAfterScript() {
+        var pendingUpdates = new PendingUpdates(getContext());
+
+        // Anything still listed means the script never ran: apply it now only when the target is
+        // not locked, which is the case for a plugin that is disabled or was never loaded.
+        if (!pendingUpdates.list().isEmpty()) {
+            getContext().logInfo("检测到未完成的更新，将在下次重启时应用");
+            return;
+        }
+
+        try {
+            java.nio.file.Path staging =
+                    getContext().getDataDirectory().resolve("pending");
+            if (!java.nio.file.Files.isDirectory(staging))
+                return;
+            try (var stream = java.nio.file.Files.list(staging)) {
+                for (var entry : stream.toList())
+                    java.nio.file.Files.deleteIfExists(entry);
+            }
+            java.nio.file.Files.deleteIfExists(staging);
+        } catch (Throwable ignored) {
+            // Leftovers are harmless.
+        }
+    }
+
+    RestartButton restartButton() {
+        return restartButton;
     }
 
     @Override

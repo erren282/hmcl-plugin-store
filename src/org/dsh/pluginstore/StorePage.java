@@ -74,8 +74,12 @@ public final class StorePage extends VBox implements
     /// Every entry fetched so far, so the search box can filter without refetching.
     private final List<StoreSource.Entry> entries = new ArrayList<>();
 
-    public StorePage(PluginContext context) {
+    /// Notified after an update is staged, so the host can offer a restart.
+    private final Runnable onStagedListener;
+
+    public StorePage(PluginContext context, Runnable onStagedListener) {
         this.context = context;
+        this.onStagedListener = onStagedListener;
         this.source = new StoreSource(context);
         this.installer = new StoreInstaller(context);
 
@@ -85,8 +89,40 @@ public final class StorePage extends VBox implements
         setFillWidth(true);
         setSpacing(0);
 
-        getChildren().addAll(buildHeader(), buildScrollableBody());
+        // Transparent root so the blurred wallpaper shows through, exactly like the launcher's own
+        // pages: those keep the wallpaper visible behind translucent content instead of painting
+        // an opaque sheet over it.
+        setBackground(null);
+
+        VBox content = new VBox(0, buildHeader(), buildScrollableBody());
+        content.setFillWidth(true);
+        content.setMaxSize(Double.MAX_VALUE, Double.MAX_VALUE);
+
+        javafx.scene.layout.StackPane backdrop = new javafx.scene.layout.StackPane();
+        backdrop.getStyleClass().add("store-backdrop");
+        backdrop.setEffect(storeBlur());
+        backdrop.setMouseTransparent(true);
+
+        javafx.scene.layout.StackPane layered = new javafx.scene.layout.StackPane(backdrop, content);
+        layered.setMaxSize(Double.MAX_VALUE, Double.MAX_VALUE);
+        VBox.setVgrow(layered, Priority.ALWAYS);
+        getChildren().add(layered);
+
         reload();
+    }
+
+    /// Builds the blur applied to the backdrop.
+    ///
+    /// <p>`BoxBlur` with a few iterations gives a soft, cheap frosted look; the launcher uses the
+    /// same effect elsewhere (for example to hide a world seed).</p>
+    ///
+    /// @return the effect
+    private static javafx.scene.effect.BoxBlur storeBlur() {
+        javafx.scene.effect.BoxBlur blur = new javafx.scene.effect.BoxBlur();
+        blur.setWidth(20);
+        blur.setHeight(20);
+        blur.setIterations(3);
+        return blur;
     }
 
     /// Pads the page down so it starts below the launcher's title bar.
@@ -214,7 +250,10 @@ public final class StorePage extends VBox implements
             }
             entries.clear();
             entries.addAll(result);
-            statusLabel.setText("共 " + entries.size() + " 个插件");
+            statusLabel.setText("共 " + entries.size() + " 个插件"
+                    + (StoreSource.isRateLimited()
+                    ? "　·　GitHub 接口已限流，更新检测不可用（见上方说明）"
+                    : ""));
             applyFilter();
         }));
     }
@@ -291,14 +330,8 @@ public final class StorePage extends VBox implements
         StackPane toggle = StoreWidgets.button("显示全部", null);
         toggle.getStyleClass().add("store-toggle");
 
-        // Three separate actions, so each has an obvious meaning:
-        //   安装 / 更新  – install the newest release (or the one picked below)
-        //   版本         – open the release picker and install the chosen version
+        // One action per card: install the newest release, or update to it.
         StackPane install = StoreWidgets.accentButton("安装", null);
-        StackPane versions = StoreWidgets.button("版本", null);
-        versions.getStyleClass().add("store-versions-button");
-        versions.setVisible(false);
-        versions.setManaged(false);
 
         Label installedLabel = new Label();
         installedLabel.getStyleClass().add("store-installed-label");
@@ -332,8 +365,12 @@ public final class StorePage extends VBox implements
                 loadDetails(entry, details);
         });
 
-        // Load the release list once, then enable the version picker and the update hint.
-        loadVersions(entry, install, versions, installedLabel, installedVersion);
+        // Only installed plugins need the release list: an uninstalled one just installs the latest,
+        // so checking for it would waste an API call per card. GitHub's unauthenticated quota is
+        // 60 requests per hour, and the store has a dozen repositories — querying them all at once
+        // exhausted the quota and left every card without version information.
+        if (installedVersion != null)
+            loadVersions(entry, install, installedLabel, installedVersion);
 
         install.setOnMouseClicked(event -> {
             if (install.isDisabled())
@@ -346,13 +383,7 @@ public final class StorePage extends VBox implements
             installEntry(entry, install, progress, bar, null);
         });
 
-        versions.setOnMouseClicked(event -> {
-            if (versions.isDisabled())
-                return;
-            promptVersionChoice(entry, install, versions, progress, bar);
-        });
-
-        HBox footer = new HBox(8, toggle, install, versions, installedLabel,
+        HBox footer = new HBox(8, toggle, install, installedLabel,
                 StoreWidgets.spacer(), progress);
         footer.setAlignment(Pos.CENTER_LEFT);
 
@@ -360,109 +391,6 @@ public final class StorePage extends VBox implements
         card.getStyleClass().add("store-card");
         card.setMaxWidth(Double.MAX_VALUE);
         return card;
-    }
-
-    /// Opens a dialog listing the available versions and installs the chosen one.
-    ///
-    /// <p>A dialog rather than a popup menu: each entry shows the version, its publish date and the
-    /// jar size, and the currently installed version is marked — information a one-line menu cannot
-    /// carry. The dialog also states plainly which version will be installed on confirm.</p>
-    ///
-    /// @param entry    the repository
-    /// @param install  the install button, restored on failure
-    /// @param progress the progress label
-    /// @param bar      the progress bar
-    private void promptVersionChoice(StoreSource.Entry entry, StackPane install, StackPane versions,
-                                     Label progress, javafx.scene.control.ProgressBar bar) {
-        String currentVersion = installedVersion(entry);
-
-        context.getRoot().supplyAsync(() -> source.findReleases(entry.fullName()))
-                .whenComplete((releases, throwable) -> Platform.runLater(() -> {
-                    if (throwable != null || releases == null || releases.isEmpty()) {
-                        progress.setText("无法获取版本列表（可能是 GitHub 接口限流）");
-                        return;
-                    }
-
-                    javafx.scene.control.ComboBox<String> picker =
-                            new javafx.scene.control.ComboBox<>();
-                    picker.getStyleClass().add("store-version-picker");
-                    picker.setMaxWidth(Double.MAX_VALUE);
-
-                    java.util.List<String> labels = new java.util.ArrayList<>();
-                    for (StoreSource.Release release : releases) {
-                        StringBuilder label = new StringBuilder("v").append(release.version());
-                        if (release.version().equals(currentVersion))
-                            label.append("（当前已安装）");
-                        if (release.asset() != null && release.asset().size() > 0)
-                            label.append(" · ").append(StoreInstaller.formatBytes(release.asset().size()));
-                        labels.add(label.toString());
-                    }
-                    picker.getItems().setAll(labels);
-                    picker.setValue(labels.get(0));
-
-                    Label preview = new Label();
-                    preview.getStyleClass().add("store-dialog-hint");
-                    Runnable updateHint = () -> {
-                        int index = labels.indexOf(picker.getValue());
-                        if (index < 0 || index >= releases.size())
-                            return;
-                        String target = releases.get(index).version();
-                        if (target.equals(currentVersion)) {
-                            preview.setText("将重新安装当前版本 v" + target);
-                        } else if (currentVersion == null) {
-                            preview.setText("将安装 v" + target);
-                        } else {
-                            preview.setText("将从 v" + currentVersion + " 切换为 v" + target);
-                        }
-                    };
-                    picker.valueProperty().addListener((obs, oldValue, newValue) -> updateHint.run());
-                    updateHint.run();
-
-                    // Built exactly like the launcher's own MessageDialogPane: the same style classes
-                    // on the heading, body and actions, and JFXButtons with the native dialog-accept
-                    // / dialog-cancel classes (cancel is FLAT). Hand-rolled styles looked foreign.
-                    Label heading = new Label("选择版本");
-                    heading.getStyleClass().addAll("jfx-layout-heading", "title");
-
-                    VBox body = new VBox(10, picker, preview);
-                    body.getStyleClass().add("jfx-layout-body");
-
-                    com.jfoenix.controls.JFXButton confirm =
-                            new com.jfoenix.controls.JFXButton("安装");
-                    confirm.getStyleClass().add("dialog-accept");
-
-                    com.jfoenix.controls.JFXButton cancel =
-                            new com.jfoenix.controls.JFXButton("取消");
-                    cancel.setButtonType(com.jfoenix.controls.JFXButton.ButtonType.FLAT);
-                    cancel.getStyleClass().add("dialog-cancel");
-
-                    HBox actions = new HBox(cancel, confirm);
-                    actions.getStyleClass().add("jfx-layout-actions");
-
-                    com.jfoenix.controls.JFXDialogLayout layout =
-                            new com.jfoenix.controls.JFXDialogLayout();
-                    layout.getStyleClass().add("jfx-dialog-layout");
-                    layout.setHeading(heading);
-                    layout.setBody(body);
-                    layout.setActions(actions);
-
-                    cancel.setOnAction(event -> org.jackhuang.hmcl.ui.DialogUtils.close(layout));
-                    confirm.setOnAction(event -> {
-                        int index = labels.indexOf(picker.getValue());
-                        org.jackhuang.hmcl.ui.DialogUtils.close(layout);
-                        if (index < 0 || index >= releases.size())
-                            return;
-
-                        install.setDisable(true);
-                        ((Label) install.getChildren().get(0)).setText("准备中…");
-                        progress.setText("");
-                        bar.setVisible(true);
-                        bar.setProgress(0);
-                        installEntry(entry, install, progress, bar, releases.get(index).version());
-                    });
-
-                    Controllers.dialog(layout);
-                }));
     }
 
     /// Shortens a repository description so a card cannot grow tall.
@@ -582,7 +510,14 @@ public final class StorePage extends VBox implements
             return source.findLatestJar(entry.fullName());
         }).whenComplete((asset, throwable) -> Platform.runLater(() -> {
             if (throwable != null || asset == null) {
-                failInstall(button, progress, bar, "该仓库没有可安装的发行版 jar");
+                // Say what actually went wrong: "no release" and "GitHub was unreachable" are very
+                // different problems, and the second one is far more common here.
+                String reason = throwable != null
+                        ? "无法获取发行版：" + throwable.getMessage()
+                        : StoreSource.isRateLimited()
+                        ? "GitHub 接口已限流，请稍后再试或配置 token"
+                        : "无法获取发行版（网络或仓库状态异常）";
+                failInstall(button, progress, bar, reason);
                 return;
             }
 
@@ -609,6 +544,20 @@ public final class StorePage extends VBox implements
                     progress.setText(description.getName() + " " + description.getVersion() + " 已安装");
                     markInstalled(button);
                     announceInstalled(description);
+                }
+
+                @Override
+                public void onStaged(String pluginId) {
+                    bar.setProgress(1.0);
+                    bar.setVisible(false);
+                    progress.setText("已下载完成，重启启动器即可完成更新");
+                    button.setDisable(false);
+                    ((Label) button.getChildren().get(0)).setText("待安装");
+
+                    // Offer the restart right away: the update cannot apply while the old jar is
+                    // loaded, so restarting is the next step and should be one click away.
+                    if (onStagedListener != null)
+                        onStagedListener.run();
                 }
 
                 @Override
@@ -640,21 +589,14 @@ public final class StorePage extends VBox implements
     ///
     /// @param entry            the repository
     /// @param install          the install / update button
-    /// @param versions         the version-picker button
     /// @param installedLabel   the label showing the installed version
     /// @param installedVersion the installed version, or `null` when absent
-    private void loadVersions(StoreSource.Entry entry, StackPane install, StackPane versions,
+    private void loadVersions(StoreSource.Entry entry, StackPane install,
                               Label installedLabel, String installedVersion) {
         context.getRoot().supplyAsync(() -> source.findReleases(entry.fullName()))
                 .whenComplete((releases, throwable) -> Platform.runLater(() -> {
                     if (throwable != null || releases == null || releases.isEmpty())
                         return;
-
-                    // The picker is only useful when there is something to pick from.
-                    if (releases.size() > 1) {
-                        versions.setVisible(true);
-                        versions.setManaged(true);
-                    }
 
                     if (installedVersion == null)
                         return;
@@ -664,7 +606,6 @@ public final class StorePage extends VBox implements
 
                     if (newest.equals(installedVersion)) {
                         // Already up to date: grey the button out instead of offering a reinstall.
-                        // The version button still allows switching to another release.
                         markInstalled(install);
                     } else {
                         installedLabel.setText("已安装 v" + installedVersion + " · 可更新到 v" + newest);

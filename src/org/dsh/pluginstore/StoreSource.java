@@ -35,6 +35,27 @@ public final class StoreSource {
     private static final java.util.concurrent.atomic.AtomicReference<java.nio.file.Path> TOKEN_FILE =
             new java.util.concurrent.atomic.AtomicReference<>();
 
+    /// Cached release lists, keyed by `owner/repo`.
+    ///
+    /// <p>Both the update check and the install path need the same list, and GitHub's
+    /// unauthenticated quota is small, so each repository is fetched at most once per session.</p>
+    private static final java.util.Map<String, List<Release>> RELEASE_CACHE =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    /// Set once GitHub answers a request with a rate-limit status.
+    ///
+    /// <p>The page uses it to explain why version information is missing, rather than leaving the
+    /// user wondering why the update buttons never light up.</p>
+    private static final java.util.concurrent.atomic.AtomicBoolean RATE_LIMITED =
+            new java.util.concurrent.atomic.AtomicBoolean();
+
+    /// Returns whether GitHub has rate-limited this session.
+    ///
+    /// @return whether a request was rejected for rate limiting
+    static boolean isRateLimited() {
+        return RATE_LIMITED.get();
+    }
+
     private final PluginContext context;
 
     StoreSource(PluginContext context) {
@@ -94,12 +115,18 @@ public final class StoreSource {
     /// @param fullName `owner/repo`
     /// @return the releases, possibly empty
     List<Release> findReleases(String fullName) {
+        List<Release> cached = RELEASE_CACHE.get(fullName);
+        if (cached != null)
+            return cached;
+
         String url = "https://api.github.com/repos/" + fullName + "/releases?per_page=30";
 
         for (int attempt = 0; attempt < 2; attempt++) {
             try {
                 String json = httpGet(url);
-                return parseReleases(fullName, json);
+                List<Release> parsed = parseReleases(fullName, json);
+                RELEASE_CACHE.put(fullName, parsed);
+                return parsed;
             } catch (RateLimitedException e) {
                 if (attempt == 0) {
                     context.logWarning("GitHub 接口限流，稍后重试：" + fullName);
@@ -113,6 +140,7 @@ public final class StoreSource {
                 }
                 context.logWarning("GitHub 接口限流，未能读取 " + fullName + " 的版本列表。"
                         + "可在插件数据目录的 github-token.txt 中填写 token 以提高额度。");
+                RATE_LIMITED.set(true);
             } catch (IOException | RuntimeException e) {
                 context.logWarning("无法读取 " + fullName + " 的版本列表：" + e.getMessage());
                 break;
@@ -263,14 +291,26 @@ public final class StoreSource {
     /// @param fullName `owner/repo`
     /// @return the asset, or `null` when the repository has no release with a jar
     Asset findLatestJar(String fullName) {
+        // Tries the dedicated `/releases/latest` endpoint first: it is a single cheap request and
+        // does not depend on the release list succeeding. Falling straight back to the list meant a
+        // single failed list request made the install button do nothing at all.
         try {
             String json = httpGet("https://api.github.com/repos/" + fullName + "/releases/latest");
             JsonObject release = JsonParser.parseString(json).getAsJsonObject();
-            return pickJar(release.getAsJsonArray("assets"));
-        } catch (IOException e) {
-            context.logWarning("无法读取 " + fullName + " 的发行版：" + e.getMessage());
-            return null;
+            Asset direct = pickJar(release.getAsJsonArray("assets"));
+            if (direct != null)
+                return direct;
+        } catch (IOException | RuntimeException e) {
+            context.logWarning("无法读取 " + fullName + " 的最新发行版：" + e.getMessage());
         }
+
+        // Fall back to the release list, which may already be cached.
+        List<Release> releases = findReleases(fullName);
+        for (Release release : releases) {
+            if (release.asset() != null)
+                return release.asset();
+        }
+        return null;
     }
 
     // --------------------------------------------------------------------- http
@@ -329,10 +369,19 @@ public final class StoreSource {
     /// @return the response body
     /// @throws IOException on failure
     private static String request(String url, String accept) throws IOException {
-        return org.jackhuang.hmcl.util.io.HttpRequest.GET(url)
+        // The token has to be attached here as well, not only on the fallback path: without it the
+        // first attempt always runs on the shared 60/hour budget and is the request that gets
+        // throttled.
+        String token = githubToken();
+
+        var request = org.jackhuang.hmcl.util.io.HttpRequest.GET(url)
                 .accept(accept)
-                .header("User-Agent", "hmcl-plugin-store")
-                .getString();
+                .header("User-Agent", "hmcl-plugin-store");
+
+        if (token != null)
+            request = request.header("Authorization", "Bearer " + token);
+
+        return request.getString();
     }
 
     /// Performs the request with a trust-all TLS context.

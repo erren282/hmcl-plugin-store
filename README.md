@@ -1,7 +1,7 @@
 # 插件商店
 
 [![HMCL Plugin](https://img.shields.io/badge/HMCL-plugin-blue)](https://github.com/topics/erren282s-launcher-plugins)
-[![Version](https://img.shields.io/badge/version-1.0.0-green)]()
+[![Version](https://img.shields.io/badge/version-1.8.2-green)]()
 [![License](https://img.shields.io/badge/license-GPL--3.0-lightgrey)](LICENSE)
 
 在 HMCL 里浏览并一键安装插件：自动从 GitHub topic 抓取插件列表，显示 star 数与简介，点一下就能装。
@@ -12,30 +12,61 @@
 
 ## 功能
 
+### 浏览
+
 - **自动发现**：通过 GitHub 搜索 API 拉取所有打了该 topic 的仓库，无需手工维护索引文件
-- **插件列表**：每个插件显示名称、★ star 数量与仓库简介
+- **插件列表**：每个插件显示名称、★ star 数量与仓库简介（两行截断，收在小方框内）
 - **Markdown 正文**：点「显示全部」用启动器自带的 `MarkdownRenderer` 渲染该仓库 README，
-  标题、列表、代码块、链接都按原生样式显示
-- **丝滑滚动**：接管鼠标滚轮事件，按视口高度换算步长并缓动到目标位置；快速滚动会滑行而不是跳格
+  固定高度视口内滚动，不会把卡片撑高
 - **本地搜索**：按名称、简介或仓库名过滤，输入即时生效，不重复请求网络
-- **一键安装**：自动找到该仓库最新 Release 里的插件 jar，下载到本地并交给启动器安装
-- **进度反馈**：安装时显示下载百分比，完成后提示是否立即重新加载插件
-- **已装识别**：已经装过的插件显示为「已安装」且按钮不可再点
+- **暗色模式**：颜色全部取自启动器 `-monet-*` 主题变量，跟随明暗主题自动切换
+- **磨砂背景**：页面半透明并叠加 `BoxBlur`，与启动器其它页面的壁纸观感一致
+
+### 安装与更新
+
+- **一键安装**：自动找到该仓库最新 Release 里的插件 jar，下载并交给启动器安装
+- **下载进度**：进度条 + 百分比 + 已下载/总大小
+- **更新检测**：已装插件与最新 Release 不同时显示「可更新到 vX」，按钮变为「更新」
+- **已装识别**：已是最新版时按钮置灰为「已安装」
+- **镜像加速**：下载按 `GitHub 原始地址 → ghfast.top → gh-proxy.com` 顺序尝试，失败自动切换
+- **自动重启更新**：无法原地替换运行中的 jar，因此下载完成后暂存，点标题栏的重启按钮即自动完成替换并重启
 
 ## 在哪里找到它
 
-商店页注册在**插件模块**里（`PluginMenuService.registerPage`），而不是主窗口侧边栏：
+商店页注册在**插件模块**里，而不是主窗口侧边栏：
 
 **设置 → 插件 → 「插件商店」**
 
-这样它和启动器自带的插件管理界面放在一起，属于插件管理功能的一部分。
-
 ## 安装本插件
 
-把 `org.dsh.plugin-store_1.0.0.jar` 放进启动器目录的 `.hmcl/plugins/`，
+把 `org.dsh.plugin-store_1.8.2.jar` 放进启动器目录的 `.hmcl/plugins/`，
 重启启动器或在「设置 → 插件」里点击「重新加载插件」。
 
-之后在 **设置 → 插件** 里会出现「插件商店」条目，点进去即可浏览。
+## 更新是如何完成的
+
+运行中的插件 jar 被类加载器映射，Windows 拒绝删除或重命名这样的文件。
+因此更新分两步：
+
+1. **下载并暂存**：新 jar 存到插件数据目录的 `pending/` 下，并写入 `pending-updates.json`
+2. **重启时替换**：点标题栏的重启按钮会生成一个批处理脚本，它等待启动器进程退出，
+   删除同 ID 的旧 jar、复制新 jar，然后重新启动启动器
+
+这样不需要手动干预，也不会残留两个版本。
+
+## GitHub 接口限流
+
+未认证的 GitHub API 每小时只有 60 次额度，而商店要为每个仓库拉取 Release 信息。
+额度耗尽时版本列表会返回空，更新检测随之失效。
+
+两种缓解措施：
+
+- **结果缓存**：同一仓库在一个会话内只请求一次
+- **可选 token**：在插件数据目录写入 `github-token.txt`（内容为 GitHub
+  personal access token，只需 public repo 读权限），额度提升到 5000 次/小时
+
+```
+.hmcl/plugins/data/org.dsh.plugin-store/github-token.txt
+```
 
 ## 工作机制
 
@@ -43,9 +74,9 @@
 | --- | --- |
 | 列出插件 | `GET /search/repositories?q=topic:erren282s-launcher-plugins` |
 | 展开简介 | `GET /repos/{owner}/{repo}/readme`（`Accept: application/vnd.github.raw`） |
-| 找安装包 | `GET /repos/{owner}/{repo}/releases/latest`，取 `assets` 里第一个 `*.jar` |
+| 版本列表 | `GET /repos/{owner}/{repo}/releases`，只保留带 jar 的 Release |
+| 找安装包 | `GET /repos/{owner}/{repo}/releases/latest`，优先取 `org.dsh.*.jar` |
 | 下载安装 | 下载到插件数据目录，再调用 `PluginManager.install(Path)` |
-| 生效 | 提示用户调用 `PluginManager.reload()` |
 
 ### 发布一个新插件需要做什么
 

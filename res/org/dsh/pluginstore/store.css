@@ -9,7 +9,14 @@
  */
 
 .store-page {
+    /* 透明：让下方的启动器壁纸透出来，与原生页面一致 */
+    -fx-background-color: transparent;
+}
+
+/* 磨砂层：覆盖壁纸并模糊，半透明表面色叠加在上方 */
+.store-backdrop {
     -fx-background-color: -monet-surface;
+    -fx-opacity: 0.72;
 }
 
 .store-title {
@@ -105,15 +112,6 @@
     -fx-text-fill: -monet-on-surface-variant;
 }
 
-/* 版本切换：次要按钮 */
-.store-versions-button {
-    -fx-background-color: -monet-surface-container;
-    -fx-border-color: -monet-outline-variant;
-}
-
-.store-versions-button:hover {
-    -fx-background-color: -monet-surface-container-high;
-}
 
 /* ------------------------------------------------------------------ 卡片 */
 
@@ -124,6 +122,7 @@
     -fx-border-width: 1px;
     -fx-border-radius: 6px;
     -fx-padding: 12 14 12 14;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.10), 6, 0.1, 0, 1);
 }
 
 .store-card-name {
@@ -234,7 +233,9 @@
 /* ------------------------------------------------------------ 标题工具行 */
 
 .store-header {
+    /* 半透明工具行，让磨砂背景透出层次 */
     -fx-background-color: -monet-surface-container-low;
+    -fx-opacity: 0.94;
     -fx-border-color: transparent transparent -monet-outline-variant transparent;
     -fx-border-width: 0 0 1 0;
 }
@@ -247,8 +248,3 @@
     -fx-text-fill: -monet-on-surface-variant;
 }
 
-.store-version-picker {
-    /* 只给尺寸，配色交给启动器原生 ComboBox 样式 */
-    -fx-pref-height: 32px;
-    -fx-pref-width: 320px;
-}
