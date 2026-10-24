@@ -21,6 +21,7 @@ import javafx.scene.layout.VBox;
 import org.jackhuang.hmcl.plugin.PluginContext;
 import org.jackhuang.hmcl.plugin.PluginDescription;
 import org.jackhuang.hmcl.plugin.PluginManager;
+import org.jackhuang.hmcl.ui.Controllers;
 import org.jackhuang.hmcl.ui.FXUtils;
 import org.jackhuang.hmcl.ui.construct.MarkdownRenderer;
 
@@ -361,10 +362,11 @@ public final class StorePage extends VBox implements
         return card;
     }
 
-    /// Asks which release to install, then installs it.
+    /// Opens a dialog listing the available versions and installs the chosen one.
     ///
-    /// <p>A popup list is used instead of an always-visible combo box: the version picker is a
-    /// rarely needed action, and keeping it behind a button leaves the card uncluttered.</p>
+    /// <p>A dialog rather than a popup menu: each entry shows the version, its publish date and the
+    /// jar size, and the currently installed version is marked — information a one-line menu cannot
+    /// carry. The dialog also states plainly which version will be installed on confirm.</p>
     ///
     /// @param entry    the repository
     /// @param install  the install button, restored on failure
@@ -372,6 +374,8 @@ public final class StorePage extends VBox implements
     /// @param bar      the progress bar
     private void promptVersionChoice(StoreSource.Entry entry, StackPane install, StackPane versions,
                                      Label progress, javafx.scene.control.ProgressBar bar) {
+        String currentVersion = installedVersion(entry);
+
         context.getRoot().supplyAsync(() -> source.findReleases(entry.fullName()))
                 .whenComplete((releases, throwable) -> Platform.runLater(() -> {
                     if (throwable != null || releases == null || releases.isEmpty()) {
@@ -379,28 +383,73 @@ public final class StorePage extends VBox implements
                         return;
                     }
 
-                    // The launcher's own popup menu, so the styling matches every other menu in the
-                    // window instead of a stock JavaFX context menu.
-                    org.jackhuang.hmcl.ui.construct.PopupMenu menu =
-                            new org.jackhuang.hmcl.ui.construct.PopupMenu();
-                    com.jfoenix.controls.JFXPopup popup = new com.jfoenix.controls.JFXPopup(menu);
+                    javafx.scene.control.ComboBox<String> picker =
+                            new javafx.scene.control.ComboBox<>();
+                    picker.getStyleClass().add("store-version-picker");
+                    picker.setMaxWidth(Double.MAX_VALUE);
 
+                    java.util.List<String> labels = new java.util.ArrayList<>();
                     for (StoreSource.Release release : releases) {
-                        String label = release.version();
-                        menu.getContent().add(new org.jackhuang.hmcl.ui.construct.IconedMenuItem(
-                                org.jackhuang.hmcl.ui.SVG.DEPLOYED_CODE, label, () -> {
-                                    install.setDisable(true);
-                                    ((Label) install.getChildren().get(0)).setText("准备中…");
-                                    progress.setText("");
-                                    bar.setVisible(true);
-                                    bar.setProgress(0);
-                                    installEntry(entry, install, progress, bar, release.version());
-                                }, popup));
+                        StringBuilder label = new StringBuilder("v").append(release.version());
+                        if (release.version().equals(currentVersion))
+                            label.append("（当前已安装）");
+                        if (release.asset() != null && release.asset().size() > 0)
+                            label.append(" · ").append(StoreInstaller.formatBytes(release.asset().size()));
+                        labels.add(label.toString());
                     }
+                    picker.getItems().setAll(labels);
+                    picker.setValue(labels.get(0));
 
-                    // Anchored under the version button, aligned to its left edge.
-                    popup.show(versions, com.jfoenix.controls.JFXPopup.PopupVPosition.BOTTOM,
-                            com.jfoenix.controls.JFXPopup.PopupHPosition.LEFT);
+                    Label hint = new Label();
+                    hint.getStyleClass().add("store-dialog-hint");
+                    Runnable updateHint = () -> {
+                        int index = labels.indexOf(picker.getValue());
+                        if (index < 0 || index >= releases.size())
+                            return;
+                        String target = releases.get(index).version();
+                        if (target.equals(currentVersion)) {
+                            hint.setText("将重新安装当前版本 v" + target);
+                        } else if (currentVersion == null) {
+                            hint.setText("将安装 v" + target);
+                        } else {
+                            hint.setText("将从 v" + currentVersion + " 切换为 v" + target);
+                        }
+                    };
+                    picker.valueProperty().addListener((obs, oldValue, newValue) -> updateHint.run());
+                    updateHint.run();
+
+                    Label heading = new Label("选择版本");
+                    heading.getStyleClass().add("store-dialog-heading");
+
+                    VBox body = new VBox(10, picker, hint);
+
+                    com.jfoenix.controls.JFXButton confirm = FXUtils.newRaisedButton("安装");
+                    confirm.getStyleClass().add("dialog-accept");
+                    com.jfoenix.controls.JFXButton cancel = FXUtils.newRaisedButton("取消");
+                    cancel.getStyleClass().add("dialog-cancel");
+
+                    com.jfoenix.controls.JFXDialogLayout layout =
+                            new com.jfoenix.controls.JFXDialogLayout();
+                    layout.setHeading(heading);
+                    layout.setBody(body);
+                    layout.setActions(cancel, confirm);
+
+                    cancel.setOnAction(event -> org.jackhuang.hmcl.ui.DialogUtils.close(layout));
+                    confirm.setOnAction(event -> {
+                        int index = labels.indexOf(picker.getValue());
+                        org.jackhuang.hmcl.ui.DialogUtils.close(layout);
+                        if (index < 0 || index >= releases.size())
+                            return;
+
+                        install.setDisable(true);
+                        ((Label) install.getChildren().get(0)).setText("准备中…");
+                        progress.setText("");
+                        bar.setVisible(true);
+                        bar.setProgress(0);
+                        installEntry(entry, install, progress, bar, releases.get(index).version());
+                    });
+
+                    Controllers.dialog(layout);
                 }));
     }
 

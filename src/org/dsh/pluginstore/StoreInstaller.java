@@ -86,6 +86,12 @@ public final class StoreInstaller {
                 Files.createDirectories(temporary.getParent());
                 downloadWithFallback(asset, temporary, callback);
 
+                // `PluginManager.install` refuses a plugin whose id is already installed, so an
+                // upgrade or downgrade has to remove the old jar first. The download is complete at
+                // this point, which keeps the window where no version is present as short as
+                // possible.
+                removeInstalledVersion(temporary);
+
                 return PluginManager.install(temporary);
             } catch (Exception e) {
                 throw new InstallException(describe(fullName, e), e);
@@ -163,6 +169,50 @@ public final class StoreInstaller {
             return host == null ? url : host;
         } catch (Throwable e) {
             return url;
+        }
+    }
+
+    /// Deletes any already-installed jar carrying the same plugin id.
+    ///
+    /// <p>`PluginManager.install` throws when the id is already present, which made upgrades and
+    /// downgrades impossible. Removing the previous jar first is what the launcher's own plugin
+    /// page does when the user deletes a plugin.</p>
+    ///
+    /// <p>Only the jar file is removed; the plugin's data directory is left untouched so its
+    /// settings survive the version change.</p>
+    ///
+    /// @param downloaded the freshly downloaded jar
+    /// @throws IOException when the old jar exists but cannot be deleted
+    private void removeInstalledVersion(Path downloaded) throws IOException {
+        String newId;
+        try {
+            newId = org.jackhuang.hmcl.plugin.PluginDescription.readFromJar(downloaded).getId();
+        } catch (Throwable e) {
+            // Let `install` report the real problem with the downloaded file.
+            return;
+        }
+        if (newId == null)
+            return;
+
+        Path directory = PluginManager.getPluginsDirectory();
+        if (directory == null || !Files.isDirectory(directory))
+            return;
+
+        try (var stream = Files.newDirectoryStream(directory, "*.jar")) {
+            for (Path existing : stream) {
+                String existingId;
+                try {
+                    existingId = org.jackhuang.hmcl.plugin.PluginDescription
+                            .readFromJar(existing).getId();
+                } catch (Throwable e) {
+                    continue;
+                }
+                if (!newId.equals(existingId))
+                    continue;
+
+                Files.deleteIfExists(existing);
+                context.logInfo("已移除旧版本插件：" + existing.getFileName() + "（" + newId + "）");
+            }
         }
     }
 
