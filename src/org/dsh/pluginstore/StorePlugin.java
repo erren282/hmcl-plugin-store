@@ -63,7 +63,7 @@ public final class StorePlugin extends HmclPlugin {
         @Override
         public Node createPage() {
             if (storePage == null)
-                storePage = new StorePage(getContext(), StorePlugin.this::closeStore);
+                storePage = new StorePage(getContext());
             return storePage;
         }
     };
@@ -80,18 +80,6 @@ public final class StorePlugin extends HmclPlugin {
         PluginMenuService.unregisterLauncherPage(page);
         removeStyles();
         getContext().logInfo("插件商店已停用");
-    }
-
-    /// Returns the launcher to its home page.
-    ///
-    /// <p>Delegates to the launcher's own navigation rather than removing nodes by hand, so the
-    /// title bar, sidebar and back stack all stay consistent.</p>
-    void closeStore() {
-        try {
-            Controllers.navigate(Controllers.getRootPage());
-        } catch (Throwable e) {
-            getContext().logWarning("无法关闭商店：" + e);
-        }
     }
 
     // ------------------------------------------------------------------- styles

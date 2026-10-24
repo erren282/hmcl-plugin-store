@@ -54,7 +54,6 @@ public final class StorePage extends VBox implements
     private final PluginContext context;
     private final StoreSource source;
     private final StoreInstaller installer;
-    private final Runnable onClose;
     private final VBox cards = new VBox(10);
     private final Label statusLabel = new Label();
     private final TextField searchField = new TextField();
@@ -62,11 +61,10 @@ public final class StorePage extends VBox implements
     /// Every entry fetched so far, so the search box can filter without refetching.
     private final List<StoreSource.Entry> entries = new ArrayList<>();
 
-    public StorePage(PluginContext context, Runnable onClose) {
+    public StorePage(PluginContext context) {
         this.context = context;
         this.source = new StoreSource(context);
         this.installer = new StoreInstaller(context);
-        this.onClose = onClose;
 
         getStyleClass().add("store-page");
         // Fills whatever the launcher's page host gives it; the scroll pane handles overflow.
@@ -121,9 +119,8 @@ public final class StorePage extends VBox implements
         searchField.textProperty().addListener((observable, oldValue, newValue) -> applyFilter());
 
         StackPane refresh = StoreWidgets.button("刷新", this::reload);
-        StackPane close = StoreWidgets.accentButton("关闭", onClose);
 
-        HBox actions = new HBox(8, searchField, refresh, close);
+        HBox actions = new HBox(8, searchField, refresh);
         actions.setAlignment(Pos.CENTER_RIGHT);
 
         HBox row = new HBox(12, texts, StoreWidgets.spacer(), actions);
@@ -151,9 +148,30 @@ public final class StorePage extends VBox implements
         scroll.setFitToWidth(true);
         scroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
         scroll.getStyleClass().add("store-scroll");
-        FXUtils.smoothScrolling(scroll);
+        enableSmoothScrolling(scroll);
         VBox.setVgrow(scroll, Priority.ALWAYS);
         return scroll;
+    }
+
+    /// Attaches the launcher's eased wheel scrolling to a scroll pane.
+    ///
+    /// <p>`FXUtils.smoothScrolling` is the public entry point but it short-circuits when the user
+    /// disables launcher animations, which silently removed smooth scrolling from this page.
+    /// The underlying helper is package-private, so it is invoked reflectively; if that fails for
+    /// any reason the public helper is used as a fallback rather than losing scrolling entirely.</p>
+    ///
+    /// @param scroll the scroll pane to tune
+    private static void enableSmoothScrolling(ScrollPane scroll) {
+        try {
+            Class<?> utils = Class.forName("org.jackhuang.hmcl.ui.ScrollUtils");
+            var method = utils.getDeclaredMethod("addSmoothScrolling", ScrollPane.class);
+            method.setAccessible(true);
+            method.invoke(null, scroll);
+            return;
+        } catch (Throwable ignored) {
+            // Fall through to the public helper.
+        }
+        FXUtils.smoothScrolling(scroll);
     }
 
     // --------------------------------------------------------------------- data
