@@ -248,7 +248,7 @@
 }
 
 .store-version-picker {
-    -fx-font-size: 12.5px;
-    -fx-pref-height: 30px;
+    /* 只给尺寸，配色交给启动器原生 ComboBox 样式 */
+    -fx-pref-height: 32px;
     -fx-pref-width: 320px;
 }

@@ -31,10 +31,19 @@ public final class StoreSource {
             "https://api.github.com/search/repositories?q=topic:" + TOPIC
                     + "&sort=updated&order=desc&per_page=100";
 
+    /// Location of the optional token file, resolved once from the plugin data directory.
+    private static final java.util.concurrent.atomic.AtomicReference<java.nio.file.Path> TOKEN_FILE =
+            new java.util.concurrent.atomic.AtomicReference<>();
+
     private final PluginContext context;
 
     StoreSource(PluginContext context) {
         this.context = context;
+        try {
+            TOKEN_FILE.set(context.getDataFile("github-token.txt"));
+        } catch (Throwable ignored) {
+            // Token support is optional.
+        }
     }
 
     /// One repository in the store.
@@ -77,12 +86,49 @@ public final class StoreSource {
     /// <p>Newest first. The store shows these so the user can pick an older version, which is what
     /// makes rolling back a broken plugin update possible without leaving the launcher.</p>
     ///
+    /// <p>GitHub rate-limits unauthenticated API calls and answers `403` when the budget is spent.
+    /// That is why the release list sometimes came back empty while downloads kept working (the
+    /// release CDN is not rate-limited). A configured token raises the limit, and a throttled
+    /// response is retried once after a short pause.</p>
+    ///
     /// @param fullName `owner/repo`
     /// @return the releases, possibly empty
     List<Release> findReleases(String fullName) {
+        String url = "https://api.github.com/repos/" + fullName + "/releases?per_page=30";
+
+        for (int attempt = 0; attempt < 2; attempt++) {
+            try {
+                String json = httpGet(url);
+                return parseReleases(fullName, json);
+            } catch (RateLimitedException e) {
+                if (attempt == 0) {
+                    context.logWarning("GitHub 接口限流，稍后重试：" + fullName);
+                    try {
+                        Thread.sleep(1200);
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                    continue;
+                }
+                context.logWarning("GitHub 接口限流，未能读取 " + fullName + " 的版本列表。"
+                        + "可在插件数据目录的 github-token.txt 中填写 token 以提高额度。");
+            } catch (IOException | RuntimeException e) {
+                context.logWarning("无法读取 " + fullName + " 的版本列表：" + e.getMessage());
+                break;
+            }
+        }
+        return new ArrayList<>();
+    }
+
+    /// Parses the releases JSON.
+    ///
+    /// @param fullName the repository, for messages
+    /// @param json     the response body
+    /// @return the releases carrying a jar
+    private List<Release> parseReleases(String fullName, String json) {
         List<Release> releases = new ArrayList<>();
         try {
-            String json = httpGet("https://api.github.com/repos/" + fullName + "/releases?per_page=30");
             JsonArray array = JsonParser.parseString(json).getAsJsonArray();
             for (JsonElement element : array) {
                 JsonObject release = element.getAsJsonObject();
@@ -98,8 +144,8 @@ public final class StoreSource {
                         asString(release, "published_at"),
                         asset));
             }
-        } catch (IOException | RuntimeException e) {
-            context.logWarning("无法读取 " + fullName + " 的版本列表：" + e.getMessage());
+        } catch (RuntimeException e) {
+            context.logWarning("解析 " + fullName + " 的版本列表失败：" + e.getMessage());
         }
         return releases;
     }
@@ -299,11 +345,16 @@ public final class StoreSource {
 
             connection.setRequestProperty("User-Agent", "hmcl-plugin-store");
             connection.setRequestProperty("Accept", accept);
+            String token = githubToken();
+            if (token != null)
+                connection.setRequestProperty("Authorization", "Bearer " + token);
             connection.setConnectTimeout(15_000);
             connection.setReadTimeout(30_000);
             connection.setInstanceFollowRedirects(true);
 
             int status = connection.getResponseCode();
+            if (status == 403 || status == 429)
+                throw new RateLimitedException("HTTP " + status);
             if (status < 200 || status >= 300)
                 throw new IOException("HTTP " + status);
 
@@ -314,6 +365,33 @@ public final class StoreSource {
             }
         } catch (java.security.GeneralSecurityException e) {
             throw new IOException("无法建立 TLS 连接：" + e.getMessage(), e);
+        }
+    }
+
+    /// Reads an optional GitHub token from the plugin data directory.
+    ///
+    /// <p>Unauthenticated API calls are limited to a small hourly budget shared by everyone on the
+    /// same IP, which the store can exhaust while listing a dozen repositories. A token raises the
+    /// limit; it is entirely optional and only used for read-only metadata requests.</p>
+    ///
+    /// @return the token, or `null` when none is configured
+    private static String githubToken() {
+        try {
+            java.nio.file.Path file = TOKEN_FILE.get();
+            if (!java.nio.file.Files.isRegularFile(file))
+                return null;
+            String text = java.nio.file.Files.readString(file).strip();
+            return text.isEmpty() ? null : text;
+        } catch (Throwable e) {
+            return null;
+        }
+    }
+
+    /// Raised when GitHub rejects a request because the rate limit was reached.
+    static final class RateLimitedException extends IOException {
+
+        RateLimitedException(String message) {
+            super(message);
         }
     }
 
