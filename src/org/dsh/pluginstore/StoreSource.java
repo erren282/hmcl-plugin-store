@@ -57,6 +57,15 @@ public final class StoreSource {
     public record Asset(String name, String downloadUrl, long size) {
     }
 
+    /// Repositories that carry the topic but are not installable plugins.
+    ///
+    /// <p>The launcher source itself is tagged with the same topic so the topic page links
+    /// everything together, but it is not a plugin and must never appear in the store.</p>
+    private static final java.util.Set<String> EXCLUDED = java.util.Set.of(
+            "erren282/erren282-launcher",
+            "erren282/erren282-lauuncher",
+            "erren282/hmcl-launcher");
+
     /// Fetches the repositories that carry the store topic.
     ///
     /// <p>Runs on a background thread; the caller is responsible for switching back to the
@@ -77,6 +86,10 @@ public final class StoreSource {
             JsonObject repository = element.getAsJsonObject();
             String fullName = asString(repository, "full_name");
             if (fullName == null || fullName.isBlank())
+                continue;
+
+            // Skip the launcher repository: it carries the topic but is not a plugin.
+            if (EXCLUDED.contains(fullName))
                 continue;
 
             entries.add(new Entry(

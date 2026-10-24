@@ -69,22 +69,26 @@ public final class StorePage extends VBox {
         reload();
     }
 
-    /// Stretches the page to the full height of the launcher's content area.
+    /// Stretches the page across the launcher's whole content area.
     ///
-    /// <p>`PluginPage` puts plugin pages inside a `VBox` in a `ScrollPane`, so a page only gets
-    /// its preferred height — a short list would leave the store floating at the top of the
-    /// window instead of filling it. Binding the minimum height to the host viewport makes the
-    /// page cover the whole area, and the binding still lets it grow when the cards exceed one
-    /// screen.</p>
-    ///
-    /// <p>The host scroll pane only exists once the node is attached, so this waits for the
-    /// scene and then walks up the parent chain.</p>
+    /// <p>`PluginPage` wraps a plugin page in a `VBox` together with a back bar, and a `VBox`
+    /// gives its children only their preferred width unless told otherwise. A page therefore
+    /// renders at its natural width — visibly only the right part of the window — no matter how
+    /// wide the content is. Filling the parent requires the page to grow horizontally and to ask
+    /// for the full viewport height, which is what this does once the host is known.</p>
     private void fillHostViewport() {
+        // Grow horizontally inside the wrapper VBox.
+        setMaxWidth(Double.MAX_VALUE);
+        if (getParent() instanceof VBox parent) {
+            VBox.setVgrow(this, Priority.ALWAYS);
+        }
+
         sceneProperty().addListener((observable, oldScene, newScene) -> {
             if (newScene == null)
                 return;
-            Node ancestor = getParent();
+
             ScrollPane host = null;
+            javafx.scene.Node ancestor = getParent();
             while (ancestor != null) {
                 if (ancestor instanceof ScrollPane pane) {
                     host = pane;
@@ -94,6 +98,14 @@ public final class StorePage extends VBox {
             }
             if (host == null)
                 return;
+
+            // Take the wrapper's full width too, so the search bar and cards span the window.
+            if (getParent() instanceof Region wrapper) {
+                wrapper.setMaxWidth(Double.MAX_VALUE);
+                if (wrapper.getParent() instanceof VBox pane) {
+                    VBox.setVgrow(wrapper, Priority.ALWAYS);
+                }
+            }
 
             var viewport = host.viewportBoundsProperty();
             minHeightProperty().unbind();

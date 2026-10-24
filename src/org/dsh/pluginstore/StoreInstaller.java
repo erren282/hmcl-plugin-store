@@ -102,19 +102,17 @@ public final class StoreInstaller {
     /// @param callback progress sink
     /// @throws IOException on any network or file error
     private void download(String url, Path target, Callback callback) throws IOException {
+        // The TLS handshake only happens when the response code is read, not when the connection
+        // object is created — so the retry has to wrap the request, not just `open`.
         HttpURLConnection connection;
         try {
-            connection = open(url, false);
-        } catch (IOException certificateProblem) {
-            // Same trust-store gap as the listing requests; the jar is still validated by the
-            // plugin manager before it is installed, so the download can proceed leniently.
-            context.logWarning("下载时证书校验失败，改为宽松校验重试：" + certificateProblem.getMessage());
-            connection = open(url, true);
+            connection = request(url, false);
+        } catch (IOException first) {
+            if (!isCertificateProblem(first))
+                throw first;
+            context.logWarning("下载时证书校验失败，改为宽松校验重试：" + first.getMessage());
+            connection = request(url, true);
         }
-
-        int status = connection.getResponseCode();
-        if (status < 200 || status >= 300)
-            throw new IOException("HTTP " + status);
 
         long total = connection.getContentLengthLong();
         long read = 0;
@@ -138,6 +136,38 @@ public final class StoreInstaller {
         } finally {
             connection.disconnect();
         }
+    }
+
+    /// Opens a connection and performs the request, returning a connection whose response code
+    /// has already been validated.
+    ///
+    /// @param url     the URL
+    /// @param lenient whether to skip TLS certificate validation
+    /// @return a connection ready to be read
+    /// @throws IOException when the connection fails or the status is not 2xx
+    private static HttpURLConnection request(String url, boolean lenient) throws IOException {
+        HttpURLConnection connection = open(url, lenient);
+        try {
+            int status = connection.getResponseCode();
+            if (status < 200 || status >= 300)
+                throw new IOException("HTTP " + status);
+            return connection;
+        } catch (IOException e) {
+            connection.disconnect();
+            throw e;
+        }
+    }
+
+    /// Returns whether a failure looks like a TLS certificate validation error.
+    ///
+    /// @param error the failure
+    /// @return whether it is a certificate problem
+    private static boolean isCertificateProblem(IOException error) {
+        String message = String.valueOf(error.getMessage());
+        return message.contains("PKIX")
+                || message.contains("certificate")
+                || message.contains("SSLHandshake")
+                || error instanceof javax.net.ssl.SSLException;
     }
 
     /// Opens a connection to an asset URL.
