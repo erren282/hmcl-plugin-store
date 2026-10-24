@@ -1,4 +1,4 @@
-/*
+﻿/*
  * 商店插件样式
  *
  * 只作用于插件自己的 .store-* 类，不影响启动器原有界面。
@@ -237,4 +237,41 @@
 .store-scroll > .scroll-bar:vertical > .track,
 .store-scroll > .scroll-bar:vertical > .track-background {
     -fx-background-color: transparent;
+}
+
+/* 版本选择、更新提示与下载进度 */
+.store-version {
+    -fx-font-size: 12px;
+    -fx-pref-height: 26px;
+    -fx-background-radius: 5px;
+}
+
+.store-installed-label {
+    -fx-font-size: 11.5px;
+    -fx-text-fill: #7B8794;
+}
+
+.store-update-available {
+    -fx-text-fill: #D9822B;
+    -fx-font-weight: bold;
+}
+
+.store-progress-bar {
+    -fx-pref-height: 4px;
+}
+
+.store-progress-bar > .bar {
+    -fx-background-color: #2F6FD0;
+    -fx-background-radius: 2px;
+    -fx-padding: 2px;
+}
+
+.store-progress-bar > .track {
+    -fx-background-color: #E7EEF9;
+    -fx-background-radius: 2px;
+}
+
+.store-progress {
+    -fx-font-size: 11.5px;
+    -fx-text-fill: #7B8794;
 }

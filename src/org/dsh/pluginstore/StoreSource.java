@@ -57,6 +57,81 @@ public final class StoreSource {
     public record Asset(String name, String downloadUrl, long size) {
     }
 
+    /// One published release of a repository.
+    ///
+    /// @param tag         the release tag, e.g. `v1.2.0`
+    /// @param publishedAt the publish timestamp, used for ordering
+    /// @param asset       the plugin jar inside that release, or `null` when it has none
+    public record Release(String tag, String publishedAt, Asset asset) {
+
+        /// Returns the version this release represents, with any leading `v` removed.
+        ///
+        /// @return the version text
+        public String version() {
+            return tag != null && tag.startsWith("v") ? tag.substring(1) : String.valueOf(tag);
+        }
+    }
+
+    /// Lists the releases of a repository that actually carry a plugin jar.
+    ///
+    /// <p>Newest first. The store shows these so the user can pick an older version, which is what
+    /// makes rolling back a broken plugin update possible without leaving the launcher.</p>
+    ///
+    /// @param fullName `owner/repo`
+    /// @return the releases, possibly empty
+    List<Release> findReleases(String fullName) {
+        List<Release> releases = new ArrayList<>();
+        try {
+            String json = httpGet("https://api.github.com/repos/" + fullName + "/releases?per_page=30");
+            JsonArray array = JsonParser.parseString(json).getAsJsonArray();
+            for (JsonElement element : array) {
+                JsonObject release = element.getAsJsonObject();
+                if (release.has("draft") && release.get("draft").getAsBoolean())
+                    continue;
+
+                Asset asset = pickJar(release.getAsJsonArray("assets"));
+                if (asset == null)
+                    continue;
+
+                releases.add(new Release(
+                        asString(release, "tag_name"),
+                        asString(release, "published_at"),
+                        asset));
+            }
+        } catch (IOException | RuntimeException e) {
+            context.logWarning("无法读取 " + fullName + " 的版本列表：" + e.getMessage());
+        }
+        return releases;
+    }
+
+    /// Chooses the plugin jar among a release's assets.
+    ///
+    /// @param assets the release assets, may be `null`
+    /// @return the chosen asset, or `null` when there is no jar
+    private static Asset pickJar(JsonArray assets) {
+        if (assets == null)
+            return null;
+
+        Asset fallback = null;
+        for (JsonElement element : assets) {
+            JsonObject asset = element.getAsJsonObject();
+            String name = asString(asset, "name");
+            if (name == null || !name.toLowerCase(java.util.Locale.ROOT).endsWith(".jar"))
+                continue;
+
+            Asset candidate = new Asset(
+                    name,
+                    asString(asset, "browser_download_url"),
+                    asset.has("size") ? asset.get("size").getAsLong() : 0L);
+
+            if (name.startsWith("org.dsh."))
+                return candidate;
+            if (fallback == null)
+                fallback = candidate;
+        }
+        return fallback;
+    }
+
     /// Repositories that carry the topic but are not installable plugins.
     ///
     /// <p>The launcher source itself is tagged with the same topic so the topic page links
@@ -128,28 +203,7 @@ public final class StoreSource {
         try {
             String json = httpGet("https://api.github.com/repos/" + fullName + "/releases/latest");
             JsonObject release = JsonParser.parseString(json).getAsJsonObject();
-            JsonArray assets = release.getAsJsonArray("assets");
-            if (assets == null)
-                return null;
-
-            Asset fallback = null;
-            for (JsonElement element : assets) {
-                JsonObject asset = element.getAsJsonObject();
-                String name = asString(asset, "name");
-                if (name == null || !name.toLowerCase(java.util.Locale.ROOT).endsWith(".jar"))
-                    continue;
-
-                Asset candidate = new Asset(
-                        name,
-                        asString(asset, "browser_download_url"),
-                        asset.has("size") ? asset.get("size").getAsLong() : 0L);
-
-                if (name.startsWith("org.dsh."))
-                    return candidate;
-                if (fallback == null)
-                    fallback = candidate;
-            }
-            return fallback;
+            return pickJar(release.getAsJsonArray("assets"));
         } catch (IOException e) {
             context.logWarning("无法读取 " + fullName + " 的发行版：" + e.getMessage());
             return null;

@@ -17,20 +17,30 @@ import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 
 /// Downloads a plugin jar from a release asset and installs it into the launcher.
 ///
-/// <p>The work happens on a background thread; the outcome is reported back on the JavaFX thread
-/// so the page can update without marshalling the whole UI.</p>
+/// <p>The work happens on a background thread; progress and the outcome are reported on the JavaFX
+/// thread so the page can update without marshalling the whole UI.</p>
+///
+/// <p>Downloads try GitHub first and fall back to public mirrors. GitHub's release CDN is often
+/// slow or unreachable from mainland China, and a several-megabyte plugin can otherwise appear to
+/// hang. The mirror list is tried in order and the first working one wins.</p>
 public final class StoreInstaller {
 
     /// Receives the progress and the final outcome on the JavaFX thread.
     public interface Callback {
 
-        /// Reports roughly how much has been downloaded.
+        /// Reports download progress.
         ///
-        /// @param fraction a value in `[0, 1]`, or a negative number when the size is unknown
-        void onProgress(double fraction);
+        /// @param received bytes downloaded so far
+        /// @param total    total bytes, or `0` when the server did not say
+        /// @param source   the host being used, for display
+        void onProgress(long received, long total, String source);
 
         /// Called after a successful install.
         ///
@@ -43,6 +53,16 @@ public final class StoreInstaller {
         void onFailed(String message);
     }
 
+    /// Public mirrors that proxy GitHub release downloads.
+    ///
+    /// <p>Each entry is a prefix prepended to the original URL. They are third-party services, so
+    /// they are only used as a fallback and the downloaded jar is still validated by the launcher
+    /// before it is installed. The list only holds hosts verified to answer, so a dead mirror does
+    /// not cost the user a timeout on every download.</p>
+    private static final List<String> MIRROR_PREFIXES = List.of(
+            "https://ghfast.top/",
+            "https://gh-proxy.com/");
+
     private final PluginContext context;
 
     StoreInstaller(PluginContext context) {
@@ -51,12 +71,11 @@ public final class StoreInstaller {
 
     /// Downloads and installs one plugin.
     ///
-    /// <p>The jar is downloaded into the plugin data directory first, then handed to
-    /// [PluginManager#install], which validates the manifest and copies it into the plugins
-    /// directory. Nothing is reloaded here: the caller decides when to reload so several
-    /// installs can be batched.</p>
+    /// <p>The jar goes into the plugin data directory first, then to [PluginManager#install],
+    /// which validates the manifest and copies it into the plugins directory. Nothing is reloaded
+    /// here: the caller decides when, so several installs can be batched.</p>
     ///
-    /// @param fullName `owner/repo`, used for the temporary file name
+    /// @param fullName `owner/repo`, used for messages
     /// @param asset    the release asset to download
     /// @param callback the progress callback
     public void install(String fullName, StoreSource.Asset asset, Callback callback) {
@@ -65,10 +84,9 @@ public final class StoreInstaller {
             try {
                 temporary = context.getDataFile("downloads/" + asset.name());
                 Files.createDirectories(temporary.getParent());
-                download(asset.downloadUrl(), temporary, callback);
+                downloadWithFallback(asset, temporary, callback);
 
-                PluginDescription description = PluginManager.install(temporary);
-                return description;
+                return PluginManager.install(temporary);
             } catch (Exception e) {
                 throw new InstallException(describe(fullName, e), e);
             } finally {
@@ -95,6 +113,59 @@ public final class StoreInstaller {
         }));
     }
 
+    /// Tries the original URL, then each mirror, until one succeeds.
+    ///
+    /// @param asset    the asset to fetch
+    /// @param target   where to write it
+    /// @param callback progress sink
+    /// @throws IOException when every source failed
+    private void downloadWithFallback(StoreSource.Asset asset, Path target, Callback callback)
+            throws IOException {
+        IOException last = null;
+
+        for (String url : candidateUrls(asset.downloadUrl())) {
+            try {
+                download(url, target, callback);
+                if (!url.equals(asset.downloadUrl()))
+                    context.logInfo("已通过镜像下载：" + hostOf(url));
+                return;
+            } catch (IOException e) {
+                last = e;
+                context.logWarning("下载源失败（" + hostOf(url) + "）：" + e.getMessage());
+            }
+        }
+
+        throw last != null ? last : new IOException("没有可用的下载源");
+    }
+
+    /// Builds the ordered list of URLs to try: the original first, then mirrors.
+    ///
+    /// @param original the GitHub asset URL
+    /// @return the URLs, without duplicates
+    private static Set<String> candidateUrls(String original) {
+        Set<String> urls = new LinkedHashSet<>();
+        if (original == null)
+            return urls;
+
+        urls.add(original);
+        for (String prefix : MIRROR_PREFIXES)
+            urls.add(prefix + original);
+        return urls;
+    }
+
+    /// Returns the host of a URL, for progress messages.
+    ///
+    /// @param url the URL
+    /// @return the host, or the URL itself when it cannot be parsed
+    private static String hostOf(String url) {
+        try {
+            String host = URI.create(url).getHost();
+            return host == null ? url : host;
+        } catch (Throwable e) {
+            return url;
+        }
+    }
+
     /// Streams one file over HTTP into the given path.
     ///
     /// @param url      the asset URL
@@ -102,8 +173,8 @@ public final class StoreInstaller {
     /// @param callback progress sink
     /// @throws IOException on any network or file error
     private void download(String url, Path target, Callback callback) throws IOException {
-        // The TLS handshake only happens when the response code is read, not when the connection
-        // object is created — so the retry has to wrap the request, not just `open`.
+        // The TLS handshake happens when the response code is read, not when the connection object
+        // is created, so the retry has to wrap the request rather than just `open`.
         HttpURLConnection connection;
         try {
             connection = request(url, false);
@@ -116,7 +187,9 @@ public final class StoreInstaller {
 
         long total = connection.getContentLengthLong();
         long read = 0;
-        byte[] buffer = new byte[16 * 1024];
+        byte[] buffer = new byte[32 * 1024];
+        String source = hostOf(url);
+        long lastReport = 0;
 
         try (InputStream input = connection.getInputStream()) {
             Files.createDirectories(target.getParent());
@@ -126,9 +199,13 @@ public final class StoreInstaller {
                 while ((count = input.read(buffer)) > 0) {
                     output.write(buffer, 0, count);
                     read += count;
-                    if (total > 0) {
-                        double fraction = (double) read / total;
-                        Platform.runLater(() -> callback.onProgress(fraction));
+
+                    // Throttle UI updates: one per 120 ms is smooth without flooding the FX thread.
+                    long now = System.currentTimeMillis();
+                    if (now - lastReport >= 120 || (total > 0 && read >= total)) {
+                        lastReport = now;
+                        long reported = read;
+                        Platform.runLater(() -> callback.onProgress(reported, total, source));
                     }
                 }
             }
@@ -138,8 +215,7 @@ public final class StoreInstaller {
         }
     }
 
-    /// Opens a connection and performs the request, returning a connection whose response code
-    /// has already been validated.
+    /// Opens a connection and performs the request, returning one whose status is already checked.
     ///
     /// @param url     the URL
     /// @param lenient whether to skip TLS certificate validation
@@ -222,6 +298,18 @@ public final class StoreInstaller {
         if (message == null || message.isBlank())
             return "无法从 " + fullName + " 安装插件";
         return message;
+    }
+
+    /// Formats a byte count for display.
+    ///
+    /// @param bytes the byte count
+    /// @return a short human-readable string
+    static String formatBytes(long bytes) {
+        if (bytes < 1024)
+            return bytes + " B";
+        if (bytes < 1024 * 1024)
+            return String.format(Locale.ROOT, "%.0f KB", bytes / 1024.0);
+        return String.format(Locale.ROOT, "%.1f MB", bytes / (1024.0 * 1024.0));
     }
 
     /// Wraps a failure so the original message survives the async boundary.
