@@ -279,3 +279,24 @@
     -fx-font-size: 11.5px;
     -fx-text-fill: #7B8794;
 }
+
+/* 已安装状态：按钮置灰，不再可点 */
+.store-button.store-installed {
+    -fx-background-color: #EFF1F4;
+    -fx-border-color: #D8DDE5;
+    -fx-opacity: 0.9;
+}
+
+.store-button.store-installed .store-button-text {
+    -fx-text-fill: #8A94A2;
+}
+
+/* 版本切换按钮：与「显示全部」同级的次要按钮 */
+.store-versions-button {
+    -fx-background-color: #F2F5FA;
+    -fx-border-color: #DCE4EF;
+}
+
+.store-versions-button:hover {
+    -fx-background-color: #E4ECF8;
+}

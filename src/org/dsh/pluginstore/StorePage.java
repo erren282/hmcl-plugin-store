@@ -375,23 +375,28 @@ public final class StorePage extends VBox implements
                         return;
                     }
 
-                    javafx.scene.control.ContextMenu menu = new javafx.scene.control.ContextMenu();
+                    // The launcher's own popup menu, so the styling matches every other menu in the
+                    // window instead of a stock JavaFX context menu.
+                    org.jackhuang.hmcl.ui.construct.PopupMenu menu =
+                            new org.jackhuang.hmcl.ui.construct.PopupMenu();
+                    com.jfoenix.controls.JFXPopup popup = new com.jfoenix.controls.JFXPopup(menu);
+
                     for (StoreSource.Release release : releases) {
-                        javafx.scene.control.MenuItem item =
-                                new javafx.scene.control.MenuItem(release.version());
-                        item.setOnAction(e -> {
-                            install.setDisable(true);
-                            ((Label) install.getChildren().get(0)).setText("准备中…");
-                            progress.setText("");
-                            bar.setVisible(true);
-                            bar.setProgress(0);
-                            installEntry(entry, install, progress, bar, release.version());
-                        });
-                        menu.getItems().add(item);
+                        String label = release.version();
+                        menu.getContent().add(new org.jackhuang.hmcl.ui.construct.IconedMenuItem(
+                                org.jackhuang.hmcl.ui.SVG.DEPLOYED_CODE, label, () -> {
+                                    install.setDisable(true);
+                                    ((Label) install.getChildren().get(0)).setText("准备中…");
+                                    progress.setText("");
+                                    bar.setVisible(true);
+                                    bar.setProgress(0);
+                                    installEntry(entry, install, progress, bar, release.version());
+                                }, popup));
                     }
 
-                    // Anchored to the version button itself, so the list appears where clicked.
-                    menu.show(versions, javafx.geometry.Side.BOTTOM, 0, 0);
+                    // Anchored under the version button, aligned to its left edge.
+                    popup.show(versions, com.jfoenix.controls.JFXPopup.PopupVPosition.BOTTOM,
+                            com.jfoenix.controls.JFXPopup.PopupHPosition.LEFT);
                 }));
     }
 
@@ -533,8 +538,7 @@ public final class StorePage extends VBox implements
                     bar.setProgress(1.0);
                     bar.setVisible(false);
                     progress.setText(description.getName() + " " + description.getVersion() + " 已安装");
-                    ((Label) button.getChildren().get(0)).setText("重新安装");
-                    button.setDisable(false);
+                    markInstalled(button);
                     announceInstalled(description);
                 }
 
@@ -590,13 +594,24 @@ public final class StorePage extends VBox implements
                     installedLabel.setText("已安装 v" + installedVersion);
 
                     if (newest.equals(installedVersion)) {
-                        ((Label) install.getChildren().get(0)).setText("重新安装");
+                        // Already up to date: grey the button out instead of offering a reinstall.
+                        // The version button still allows switching to another release.
+                        markInstalled(install);
                     } else {
                         installedLabel.setText("已安装 v" + installedVersion + " · 可更新到 v" + newest);
                         installedLabel.getStyleClass().add("store-update-available");
                         ((Label) install.getChildren().get(0)).setText("更新");
                     }
                 }));
+    }
+
+    /// Turns an install button into a disabled "已安装" state.
+    ///
+    /// @param install the button
+    private static void markInstalled(StackPane install) {
+        install.setDisable(true);
+        install.getStyleClass().add("store-installed");
+        ((Label) install.getChildren().get(0)).setText("已安装");
     }
 
     /// Reports a finished install without interrupting the user.
