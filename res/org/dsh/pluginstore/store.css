@@ -1,37 +1,41 @@
-﻿/*
+/*
  * 商店插件样式
  *
  * 只作用于插件自己的 .store-* 类，不影响启动器原有界面。
+ *
+ * 颜色一律取自启动器的 -monet-* 主题变量，而不是写死十六进制：
+ * 启动器切换明/暗色主题时这些变量会随之改变，商店也就自动跟随，
+ * 不会出现深色背景配白卡片的情况。
  */
 
 .store-page {
-    -fx-background-color: #F5F9FE;
+    -fx-background-color: -monet-surface;
 }
 
 .store-title {
     -fx-font-size: 17px;
     -fx-font-weight: bold;
-    -fx-text-fill: #343D4A;
+    -fx-text-fill: -monet-on-surface;
 }
 
 .store-subtitle {
     -fx-font-size: 11.5px;
-    -fx-text-fill: #8C8C8C;
+    -fx-text-fill: -monet-on-surface-variant;
 }
 
 .store-status {
     -fx-font-size: 12px;
-    -fx-text-fill: #8C8C8C;
+    -fx-text-fill: -monet-on-surface-variant;
 }
 
 .store-progress {
     -fx-font-size: 11.5px;
-    -fx-text-fill: #1370F3;
+    -fx-text-fill: -monet-primary;
 }
 
 .store-link {
     -fx-font-size: 11.5px;
-    -fx-text-fill: #0B5BCB;
+    -fx-text-fill: -monet-primary;
     -fx-cursor: hand;
     -fx-underline: true;
 }
@@ -39,103 +43,113 @@
 /* ------------------------------------------------------------------ 搜索框 */
 
 .store-search {
-    -fx-background-color: #FFFFFF;
+    -fx-background-color: -monet-surface-container-high;
     -fx-background-radius: 4px;
-    -fx-border-color: #C9D6E8;
+    -fx-border-color: -monet-outline-variant;
     -fx-border-width: 1px;
     -fx-border-radius: 4px;
     -fx-padding: 6 10 6 10;
     -fx-font-size: 12.5px;
-    -fx-prompt-text-fill: #A6A6A6;
+    -fx-text-fill: -monet-on-surface;
+    -fx-prompt-text-fill: -monet-on-surface-variant;
 }
 
 .store-search:focused {
-    -fx-border-color: #1370F3;
+    -fx-border-color: -monet-primary;
 }
 
 /* -------------------------------------------------------------------- 按钮 */
 
 .store-button {
-    -fx-background-color: #FFFFFF;
+    -fx-background-color: -monet-surface-container-high;
     -fx-background-radius: 4px;
-    -fx-border-color: #0B5BCB;
+    -fx-border-color: -monet-primary;
     -fx-border-width: 1px;
     -fx-border-radius: 4px;
-    -fx-padding: 5 14 5 14;
+    -fx-padding: 4 12 4 12;
     -fx-cursor: hand;
 }
 
 .store-button:hover {
-    -fx-background-color: #E0EAFD;
+    -fx-background-color: -monet-surface-container-highest;
 }
 
 .store-button .store-button-text {
     -fx-font-size: 12.5px;
-    -fx-text-fill: #0B5BCB;
+    -fx-text-fill: -monet-primary;
 }
 
+/* 主按钮（安装 / 更新） */
 .store-button.accent {
-    -fx-background-color: #1370F3;
-    -fx-border-color: #1370F3;
+    -fx-background-color: -monet-primary;
+    -fx-border-color: -monet-primary;
 }
 
 .store-button.accent:hover {
-    -fx-background-color: #0B5BCB;
+    -fx-background-color: -monet-primary-container;
+    -fx-border-color: -monet-primary-container;
 }
 
 .store-button.accent .store-button-text {
-    -fx-text-fill: #FFFFFF;
+    -fx-text-fill: -monet-on-primary;
 }
 
-.store-button:disabled,
+/* 已安装：禁用并置灰 */
 .store-button.store-installed {
-    -fx-opacity: 1;
-    -fx-background-color: #F0F0F0;
-    -fx-border-color: #CCCCCC;
-    -fx-cursor: default;
+    -fx-background-color: -monet-surface-container;
+    -fx-border-color: -monet-outline-variant;
+    -fx-opacity: 0.9;
 }
 
-.store-button.store-installed .store-button-text,
-.store-button:disabled .store-button-text {
-    -fx-text-fill: #8C8C8C;
+.store-button.store-installed .store-button-text {
+    -fx-text-fill: -monet-on-surface-variant;
 }
 
-/* -------------------------------------------------------------------- 卡片 */
+/* 版本切换：次要按钮 */
+.store-versions-button {
+    -fx-background-color: -monet-surface-container;
+    -fx-border-color: -monet-outline-variant;
+}
+
+.store-versions-button:hover {
+    -fx-background-color: -monet-surface-container-high;
+}
+
+/* ------------------------------------------------------------------ 卡片 */
 
 .store-card {
-    -fx-background-color: #FFFFFF;
-    -fx-background-radius: 5px;
-    -fx-border-color: #E4EAF2;
+    -fx-background-color: -monet-surface-container-low;
+    -fx-background-radius: 6px;
+    -fx-border-color: -monet-outline-variant;
     -fx-border-width: 1px;
-    -fx-border-radius: 5px;
+    -fx-border-radius: 6px;
     -fx-padding: 12 14 12 14;
 }
 
 .store-card-name {
     -fx-font-size: 14px;
     -fx-font-weight: bold;
-    -fx-text-fill: #343D4A;
+    -fx-text-fill: -monet-on-surface;
 }
 
 .store-stars {
     -fx-font-size: 12px;
-    -fx-text-fill: #E0A030;
-    -fx-background-color: #FDF6E7;
+    -fx-text-fill: -monet-tertiary;
+    -fx-background-color: -monet-tertiary-fixed;
     -fx-background-radius: 9px;
     -fx-padding: 1 8 1 8;
 }
 
 .store-summary {
     -fx-font-size: 12.5px;
-    -fx-text-fill: #737373;
+    -fx-text-fill: -monet-on-surface-variant;
 }
 
-/* 简介收在一个小方框里：浅底、圆角、内缩并限制高度，
-   避免长简介把卡片撑得很高；左侧额外缩进使其与卡片标题错开。 */
+/* 简介小方框 */
 .store-summary-box {
-    -fx-background-color: #F4F7FC;
+    -fx-background-color: -monet-surface-container;
     -fx-background-radius: 6px;
-    -fx-border-color: #E2EAF5;
+    -fx-border-color: -monet-outline-variant;
     -fx-border-width: 1px;
     -fx-border-radius: 6px;
     -fx-padding: 6 10 6 10;
@@ -146,14 +160,12 @@
     -fx-padding: 6 0 0 0;
 }
 
-/* README 区域：不再自带滚动条，直接内联在卡片里。
-   横向撑满，纵向由外层 PluginPage 的 ScrollPane 统一滚动。 */
-/* README 介绍框：固定高度、内部滚动，卡片不会被长 README 撑高 */
+/* README 视口：固定高度，内部滚动 */
 .store-readme {
-    -fx-background-color: #FAFBFD;
+    -fx-background-color: -monet-surface-container;
     -fx-background: transparent;
     -fx-background-radius: 4px;
-    -fx-border-color: #EDF1F7;
+    -fx-border-color: -monet-outline-variant;
     -fx-border-width: 1px;
     -fx-border-radius: 4px;
     -fx-padding: 0;
@@ -173,86 +185,19 @@
 .store-readme .label,
 .store-readme .text {
     -fx-font-size: 12.5px;
-    -fx-text-fill: #4A4A4A;
+    -fx-fill: -monet-on-surface;
+    -fx-text-fill: -monet-on-surface;
 }
 
-/* 页面本体：占据装饰器的整个内容区（含左侧设置栏的位置） */
-.store-page {
-    -fx-background-color: #F5F9FE;
-}
-
-/* 顶部标题栏：白底 + 细分隔线，与下方列表区分开 */
-.store-header {
-    -fx-background-color: #FFFFFF;
-    -fx-border-color: transparent transparent #E4EAF2 transparent;
-    -fx-border-width: 0 0 1 0;
-}
-
-/* 列表滚动区：本页是唯一滚动容器，不嵌套 */
-/* 内容区：普通容器，不设滚动条。整页滚动由 PluginPageProxy 的宿主 ScrollPane 统一接管。
-   这里只保证它横向撑满、纵向按内容自然增长。 */
-.store-body {
-    -fx-background-color: transparent;
-    -fx-max-width: infinity;
-}
-
-/* 卡片与详情块都只作为普通内容，不产生独立滚动视口 */
-.store-card {
-    -fx-max-width: infinity;
-}
-
-.store-readme {
-    -fx-max-width: infinity;
-}
-/* 页面唯一滚动容器（商店已改为 navigator 页面，没有宿主滚动层） */
-.store-scroll {
-    -fx-background-color: transparent;
-    -fx-background: transparent;
-}
-
-.store-scroll > .viewport {
-    -fx-background-color: transparent;
-}
-
-.store-scroll > .scroll-bar:vertical {
-    -fx-background-color: transparent;
-    -fx-pref-width: 10px;
-}
-
-.store-scroll > .scroll-bar:vertical > .thumb {
-    -fx-background-color: #CBD8EA;
-    -fx-background-radius: 5px;
-}
-
-.store-scroll > .scroll-bar:vertical > .thumb:hover {
-    -fx-background-color: #A9BEDB;
-}
-
-.store-scroll > .scroll-bar > .increment-button,
-.store-scroll > .scroll-bar > .decrement-button {
-    -fx-padding: 0;
-    -fx-pref-height: 0;
-}
-
-.store-scroll > .scroll-bar:vertical > .track,
-.store-scroll > .scroll-bar:vertical > .track-background {
-    -fx-background-color: transparent;
-}
-
-/* 版本选择、更新提示与下载进度 */
-.store-version {
-    -fx-font-size: 12px;
-    -fx-pref-height: 26px;
-    -fx-background-radius: 5px;
-}
+/* ------------------------------------------------------------ 版本与进度 */
 
 .store-installed-label {
     -fx-font-size: 11.5px;
-    -fx-text-fill: #7B8794;
+    -fx-text-fill: -monet-on-surface-variant;
 }
 
 .store-update-available {
-    -fx-text-fill: #D9822B;
+    -fx-text-fill: -monet-tertiary;
     -fx-font-weight: bold;
 }
 
@@ -264,39 +209,32 @@
 }
 
 .store-progress-bar > .bar {
-    -fx-background-color: #2F6FD0;
+    -fx-background-color: -monet-primary;
     -fx-background-radius: 3px;
     -fx-background-insets: 0;
 }
 
 .store-progress-bar > .track {
-    -fx-background-color: #E7EEF9;
+    -fx-background-color: -monet-surface-container-highest;
     -fx-background-radius: 3px;
     -fx-background-insets: 0;
 }
 
-.store-progress {
-    -fx-font-size: 11.5px;
-    -fx-text-fill: #7B8794;
+/* -------------------------------------------------------------- 滚动条 */
+
+.store-scroll {
+    -fx-background-color: transparent;
+    -fx-background: transparent;
 }
 
-/* 已安装状态：按钮置灰，不再可点 */
-.store-button.store-installed {
-    -fx-background-color: #EFF1F4;
-    -fx-border-color: #D8DDE5;
-    -fx-opacity: 0.9;
+.store-scroll > .viewport {
+    -fx-background-color: transparent;
 }
 
-.store-button.store-installed .store-button-text {
-    -fx-text-fill: #8A94A2;
-}
+/* ------------------------------------------------------------ 标题工具行 */
 
-/* 版本切换按钮：与「显示全部」同级的次要按钮 */
-.store-versions-button {
-    -fx-background-color: #F2F5FA;
-    -fx-border-color: #DCE4EF;
-}
-
-.store-versions-button:hover {
-    -fx-background-color: #E4ECF8;
+.store-header {
+    -fx-background-color: -monet-surface-container-low;
+    -fx-border-color: transparent transparent -monet-outline-variant transparent;
+    -fx-border-width: 0 0 1 0;
 }

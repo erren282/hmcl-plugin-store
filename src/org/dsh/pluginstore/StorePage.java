@@ -315,8 +315,12 @@ public final class StorePage extends VBox implements
         bar.setVisible(false);
 
         String installedVersion = installedVersion(entry);
-        if (installedVersion != null)
+        if (installedVersion != null) {
             installedLabel.setText("已安装 v" + installedVersion);
+            // Grey the button immediately: without this the card stayed clickable until the
+            // release list finished loading, so an installed plugin could be installed again.
+            markInstalled(install);
+        }
 
         toggle.setOnMouseClicked(event -> {
             boolean show = !details.isVisible();
