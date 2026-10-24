@@ -40,31 +40,45 @@ public final class StorePlugin extends HmclPlugin {
 
     /// The plugin-module entry that opens the store full-window.
     ///
-    /// <p>The store must cover the whole window, including the settings sidebar, so it cannot be
-    /// a page *inside* the settings page: the launcher renders plugin-module pages in the right
-    /// content area, which leaves the sidebar visible beside it. This entry therefore only acts
-    /// as a launch button — clicking it navigates the launcher's whole content area to a
-    /// full-window store page.</p>
-    private final PluginPageAction page = new PluginPageAction() {
+    /// <p>Registered as a **launcher page** rather than a settings page action. Settings-page
+    /// actions are rendered inside `PluginPage`'s own `TransitionPane`, which never touches the
+    /// navigator — so `PageAware.onPageShown` never fires there and the second click found a
+    /// cached placeholder and did nothing. Launcher pages go through
+    /// `Controllers.navigate(PluginPageProxy.of(page))`, i.e. a real navigator push, so every
+    /// click reaches `onPageShown` and can open the store.</p>
+    private final org.jackhuang.hmcl.plugin.PluginLauncherPage page =
+            new org.jackhuang.hmcl.plugin.PluginLauncherPage() {
 
-        @Override
-        public String getTitle() {
-            return "插件商店";
-        }
+                @Override
+                public String getTitle() {
+                    return "插件商店";
+                }
 
-        @Override
-        public String getDescription() {
-            return "全屏浏览 GitHub topic：" + StoreSource.TOPIC + " 下的插件，一键安装";
-        }
+                @Override
+                public org.jackhuang.hmcl.ui.SVG getIcon() {
+                    return org.jackhuang.hmcl.ui.SVG.EXTENSION;
+                }
 
-        @Override
-        public Node createPage() {
-            // Navigate is deferred: createPage runs while the launcher is building the plugin
-            // page, and replacing the whole content area during that build would fight it.
-            javafx.application.Platform.runLater(StorePlugin.this::openFullWindowStore);
-            return new StackPane();
+                @Override
+                public Node createPage() {
+                    // The launcher calls this on every sidebar click and does not cache it for
+                    // launcher pages, so opening the store from here works repeatedly — unlike
+                    // the old settings-page action, whose result was cached after the first click.
+                    javafx.application.Platform.runLater(StorePlugin.this::openFullWindowStore);
+                    return new StoreEntryNode();
+                }
+            };
+
+    /// A placeholder shown for the instant between the click and the store appearing.
+    ///
+    /// <p>Kept deliberately inert: `PluginPageProxy` does not forward `PageAware.onPageShown`,
+    /// so the navigation trigger lives in `createPage` instead.</p>
+    private static final class StoreEntryNode extends StackPane {
+
+        StoreEntryNode() {
+            getChildren().add(new javafx.scene.control.Label("正在打开插件商店…"));
         }
-    };
+    }
 
     /// The full-window store page, created once and reused.
     private Node storePage;
@@ -77,14 +91,14 @@ public final class StorePlugin extends HmclPlugin {
 
     @Override
     public void onEnable() {
-        PluginMenuService.registerPage(page);
+        PluginMenuService.registerLauncherPage(page);
         installStyles();
         getContext().logInfo("插件商店已启用（全窗口模式），数据源：GitHub topic " + StoreSource.TOPIC);
     }
 
     @Override
     public void onDisable() {
-        PluginMenuService.unregisterPage(page);
+        PluginMenuService.unregisterLauncherPage(page);
         removeStyles();
         leaveStore();
         getContext().logInfo("插件商店已停用");
@@ -105,39 +119,66 @@ public final class StorePlugin extends HmclPlugin {
     void openFullWindowStore() {
         try {
             javafx.scene.Scene scene = Controllers.getScene();
-            if (scene == null || Controllers.getDecorator() == null)
-                return;
-
-            if (storePage == null)
-                storePage = new StorePage(getContext());
-
-            // Reopening must not push a second copy: navigating to the page already on top is a
-            // no-op, but pushing it again would leave duplicates on the stack that each need
-            // their own back press.
-            var navigator = navigatorOf();
-            if (navigator != null && navigator.getCurrentPage() == storePage) {
-                storeShowing = true;
-                installBackFilter();
+            if (scene == null || Controllers.getDecorator() == null) {
+                getContext().logWarning("打开商店失败：场景或装饰器未就绪");
                 return;
             }
 
-            storeShowing = true;
-            Controllers.navigate(storePage);
+            var decorator = Controllers.getDecorator().getDecorator();
+            javafx.scene.layout.StackPane wrapper = decorator.getDrawerWrapper();
+            if (wrapper == null) {
+                getContext().logWarning("打开商店失败：drawerWrapper 为空");
+                return;
+            }
 
-            // Extra safety net: intercept the arrow even if the launcher's back stack was reset
-            // by another plugin navigating in the meantime.
+            // The store is an overlay on the decorator's wrapper, not a navigator page.
+            //
+            // A navigator page lives inside the launcher's back stack, and every attempt to make
+            // its back arrow close the store fought that stack (a bound action handler, a pushed
+            // settings page, a cached page factory). An overlay is independent of all of it: it
+            // covers the whole window, and closing it is a plain removal this plugin controls.
+            if (storePage != null && wrapper.getChildren().contains(storePage)) {
+                getContext().logInfo("商店已经打开，忽略重复请求");
+                return;
+            }
+
+            if (storePage == null)
+                storePage = new StorePage(getContext(), this::closeStore);
+
+            storeShowing = true;
+
+            // Mount the overlay *below* the launcher's frame, not on top of it.
+            //
+            // Covering the whole window also covered the title bar, so the back arrow could never
+            // receive a click — which is why closing through that arrow failed no matter how the
+            // handler was wired. Placing the overlay just under the frame keeps the title bar
+            // above it and clickable, while the store still fills the rest of the window.
+            int frameIndex = -1;
+            for (int i = 0; i < wrapper.getChildren().size(); i++) {
+                if (wrapper.getChildren().get(i).getStyleClass().contains("jfx-decorator")) {
+                    frameIndex = i;
+                    break;
+                }
+            }
+
+            if (frameIndex >= 0)
+                wrapper.getChildren().add(frameIndex, storePage);
+            else
+                wrapper.getChildren().add(storePage);
+
+            getContext().logInfo("商店已作为覆盖层打开（标题栏之上仍可点击）");
             installBackFilter();
         } catch (Throwable e) {
             getContext().logWarning("无法打开全窗口商店：" + e);
         }
     }
 
-    /// Intercepts the title bar's back arrow while the store is open.
+    /// Intercepts clicks on the title bar's back arrow while the store is open.
     ///
-    /// <p>An event filter on the scene runs before the button's own action, so consuming the
-    /// click lets the store close deterministically. The navigator already pops the store on
-    /// back, but other plugins may push pages and disturb the stack, so this guarantees the
-    /// arrow always works.</p>
+    /// <p>Watches both press and release and matches the arrow structurally: the title bar is
+    /// rebuilt by the launcher, so relying on one exact parent chain was fragile. Any click that
+    /// lands on a `jfx-decorator-button` which is *not* one of the window buttons on the right
+    /// counts as the back arrow and closes the store.</p>
     private void installBackFilter() {
         if (backFilter != null)
             return;
@@ -154,55 +195,75 @@ public final class StorePlugin extends HmclPlugin {
             if (button == null)
                 return;
 
-            // Only the left-hand back arrow, not the window buttons on the right.
-            if (!isLeftNavButton(button))
+            // Window controls must keep their own behaviour.
+            if (isWindowButton(button))
                 return;
 
-            event.consume();
-            closeStore();
+            // Consume on release only: consuming the press would stop the button from ever
+            // producing a click, so the two events are handled differently.
+            if (event.getEventType() == javafx.scene.input.MouseEvent.MOUSE_PRESSED) {
+                event.consume();
+                closeStore();
+            } else {
+                event.consume();
+            }
         };
 
         javafx.scene.Scene scene = Controllers.getScene();
-        if (scene != null)
+        if (scene != null) {
+            scene.addEventFilter(javafx.scene.input.MouseEvent.MOUSE_PRESSED, backFilter);
             scene.addEventFilter(javafx.scene.input.MouseEvent.MOUSE_CLICKED, backFilter);
+        }
+        getContext().logInfo("商店：已安装返回箭头拦截");
     }
 
-    /// Returns whether a title-bar button sits in the nav bar's left box.
+    /// Returns whether a title-bar button is one of the window controls on the right.
+    ///
+    /// <p>Matched by position rather than parentage: the window buttons live in the decorator's
+    /// overlay layer, which is separate from the nav bar's left box.</p>
     ///
     /// @param button the button
-    /// @return whether it is the back arrow
-    private boolean isLeftNavButton(Node button) {
+    /// @return whether it is minimize/close
+    private boolean isWindowButton(Node button) {
         try {
-            javafx.scene.Node navPane = findById(Controllers.getScene().getRoot(),
+            Node navPane = findById(Controllers.getScene().getRoot(),
                     "decoratorTitleTransitionPane");
             if (navPane == null)
                 return false;
-            Node parent = navPane.getParent();
-            if (!(parent instanceof javafx.scene.Parent nav) || nav.getChildrenUnmodifiable().isEmpty())
-                return false;
-            Node left = nav.getChildrenUnmodifiable().get(0);
-            return left instanceof javafx.scene.Parent box && box.getChildrenUnmodifiable().contains(button);
+            // Everything inside the nav bar pane is page navigation; the window buttons are not.
+            Node node = button;
+            while (node != null) {
+                if (node == navPane)
+                    return false;
+                node = node.getParent();
+            }
+            return true;
         } catch (Throwable e) {
             return false;
         }
     }
 
-    /// Pops the store off the navigator's stack.
+    /// Removes the store overlay from the window.
     ///
-    /// <p>Only pops; never pushes. Navigating to another page instead would stack that page on
-    /// top of the store (`root → store → settings`), so the next back press would reveal the
-    /// store again and it would take two presses to actually leave — the "store keeps coming
-    /// back" symptom. Popping removes the store in one step and reveals whatever was underneath.</p>
+    /// <p>Plain removal: the overlay is a child of the decorator's wrapper, so taking it out
+    /// restores whatever the launcher was showing, with no back-stack involvement at all. This
+    /// is the only thing that has to work for the store to close, which is why it cannot be
+    /// defeated by the launcher's navigation.</p>
     void closeStore() {
         storeShowing = false;
         try {
             if (backFilter != null && Controllers.getScene() != null) {
                 Controllers.getScene().removeEventFilter(
                         javafx.scene.input.MouseEvent.MOUSE_CLICKED, backFilter);
+                Controllers.getScene().removeEventFilter(
+                        javafx.scene.input.MouseEvent.MOUSE_PRESSED, backFilter);
                 backFilter = null;
             }
 
-            popStore();
+            if (storePage != null && storePage.getParent() instanceof javafx.scene.layout.Pane pane) {
+                pane.getChildren().remove(storePage);
+                getContext().logInfo("商店覆盖层已移除");
+            }
         } catch (Throwable e) {
             getContext().logWarning("无法关闭商店：" + e);
         }
@@ -243,18 +304,12 @@ public final class StorePlugin extends HmclPlugin {
         return null;
     }
 
-    /// Leaves the store if it is currently shown, e.g. when the plugin is disabled.
+    /// Removes the store overlay if it is on screen, e.g. when the plugin is disabled.
     private void leaveStore() {
         try {
             if (!storeShowing)
                 return;
-            storeShowing = false;
-            if (backFilter != null && Controllers.getScene() != null) {
-                Controllers.getScene().removeEventFilter(
-                        javafx.scene.input.MouseEvent.MOUSE_CLICKED, backFilter);
-                backFilter = null;
-            }
-            popStore();
+            closeStore();
         } catch (Throwable ignored) {
             // Nothing to restore.
         }

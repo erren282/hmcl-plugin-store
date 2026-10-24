@@ -38,7 +38,8 @@ import java.util.Locale;
 /// the back arrow, `back()` pops it, and no page title is drawn beside it — which is what makes
 /// the store cover the settings sidebar instead of sitting next to it.</p>
 public final class StorePage extends VBox implements
-        org.jackhuang.hmcl.ui.decorator.DecoratorPage {
+        org.jackhuang.hmcl.ui.decorator.DecoratorPage,
+        org.jackhuang.hmcl.ui.construct.PageAware {
 
     /// Page state reported to the launcher's title bar.
     private final javafx.beans.property.ReadOnlyObjectWrapper<org.jackhuang.hmcl.ui.decorator.DecoratorPage.State> state =
@@ -54,7 +55,7 @@ public final class StorePage extends VBox implements
     private final PluginContext context;
     private final StoreSource source;
     private final StoreInstaller installer;
-
+    private final Runnable onClose;
     private final VBox cards = new VBox(10);
     private final Label statusLabel = new Label();
     private final TextField searchField = new TextField();
@@ -62,20 +63,27 @@ public final class StorePage extends VBox implements
     /// Every entry fetched so far, so the search box can filter without refetching.
     private final List<StoreSource.Entry> entries = new ArrayList<>();
 
-    public StorePage(PluginContext context) {
+    public StorePage(PluginContext context, Runnable onClose) {
         this.context = context;
         this.source = new StoreSource(context);
         this.installer = new StoreInstaller(context);
+        this.onClose = onClose;
 
         getStyleClass().add("store-page");
-        // The page occupies the decorator's content slot, so it fills whatever space that gives
-        // (the whole window) and scrolls internally instead of relying on a host scroller.
+        // Sits in the decorator's wrapper as an overlay, so it must claim the whole area rather
+        // than its preferred size; the scroll pane inside handles the content.
         setMaxSize(Double.MAX_VALUE, Double.MAX_VALUE);
         setFillWidth(true);
         setSpacing(0);
 
         getChildren().addAll(buildHeader(), buildScrollableBody());
         reload();
+    }
+
+    @Override
+    public void onPageShown() {
+        if (entries.isEmpty())
+            reload();
     }
 
     // -------------------------------------------------------------------- header
@@ -101,8 +109,9 @@ public final class StorePage extends VBox implements
         searchField.textProperty().addListener((observable, oldValue, newValue) -> applyFilter());
 
         StackPane refresh = StoreWidgets.button("刷新", this::reload);
+        StackPane close = StoreWidgets.accentButton("关闭", onClose);
 
-        HBox actions = new HBox(8, searchField, refresh);
+        HBox actions = new HBox(8, searchField, refresh, close);
         actions.setAlignment(Pos.CENTER_RIGHT);
 
         HBox row = new HBox(12, texts, StoreWidgets.spacer(), actions);
