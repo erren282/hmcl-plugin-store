@@ -379,7 +379,7 @@ public final class StorePage extends VBox implements
         context.getRoot().supplyAsync(() -> source.findReleases(entry.fullName()))
                 .whenComplete((releases, throwable) -> Platform.runLater(() -> {
                     if (throwable != null || releases == null || releases.isEmpty()) {
-                        progress.setText("该仓库没有可选版本");
+                        progress.setText("无法获取版本列表（可能是 GitHub 接口限流）");
                         return;
                     }
 
@@ -496,7 +496,11 @@ public final class StorePage extends VBox implements
                 .whenComplete((readme, throwable) -> Platform.runLater(() -> {
                     details.getChildren().clear();
                     if (throwable != null || readme == null || readme.isBlank()) {
-                        details.getChildren().add(hint("该仓库没有可显示的 README。"));
+                        // Say why instead of a blanket "no README": the usual cause is GitHub's
+                        // unauthenticated rate limit, which the user can lift with a token.
+                        details.getChildren().add(hint("无法获取 README。"
+                                + "常见原因是 GitHub 接口限流，"
+                                + "可在插件数据目录的 github-token.txt 中填入 token 后重试。"));
                         return;
                     }
 

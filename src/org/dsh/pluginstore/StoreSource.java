@@ -229,13 +229,30 @@ public final class StoreSource {
     /// @param fullName `owner/repo`
     /// @return the README text, or an empty string when there is none
     String fetchReadme(String fullName) {
-        try {
-            return httpGet("https://api.github.com/repos/" + fullName + "/readme",
-                    "application/vnd.github.raw");
-        } catch (IOException e) {
-            context.logWarning("无法读取 " + fullName + " 的 README：" + e.getMessage());
-            return "";
+        String url = "https://api.github.com/repos/" + fullName + "/readme";
+
+        // Same rate-limit handling as the release list: a throttled README is worth one retry.
+        for (int attempt = 0; attempt < 2; attempt++) {
+            try {
+                return httpGet(url, "application/vnd.github.raw");
+            } catch (RateLimitedException e) {
+                if (attempt == 0) {
+                    try {
+                        Thread.sleep(1200);
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                    continue;
+                }
+                context.logWarning("GitHub 接口限流，未能读取 " + fullName + " 的 README");
+                return "";
+            } catch (IOException e) {
+                context.logWarning("无法读取 " + fullName + " 的 README：" + e.getMessage());
+                return "";
+            }
         }
+        return "";
     }
 
     /// Finds the plugin jar in a repository's latest release.
@@ -283,6 +300,10 @@ public final class StoreSource {
         try {
             return request(url, accept);
         } catch (IOException first) {
+            // A rate-limit answer is not a TLS problem: report it as-is so callers can retry.
+            if (first instanceof RateLimitedException rateLimited)
+                throw rateLimited;
+
             String message = String.valueOf(first.getMessage());
             boolean certificateProblem = message.contains("PKIX")
                     || message.contains("certificate")
@@ -293,8 +314,10 @@ public final class StoreSource {
             context.logWarning("GitHub 证书校验失败，改为宽松校验重试：" + message);
             try {
                 return requestLeniently(url, accept);
+            } catch (RateLimitedException rateLimited) {
+                throw rateLimited;
             } catch (IOException second) {
-                throw new IOException("无法连接 GitHub（证书校验失败）：" + message, second);
+                throw new IOException("无法连接 GitHub：" + second.getMessage(), second);
             }
         }
     }
