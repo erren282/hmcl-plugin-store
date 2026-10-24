@@ -290,16 +290,14 @@ public final class StorePage extends VBox implements
         StackPane toggle = StoreWidgets.button("显示全部", null);
         toggle.getStyleClass().add("store-toggle");
 
+        // Three separate actions, so each has an obvious meaning:
+        //   安装 / 更新  – install the newest release (or the one picked below)
+        //   版本         – open the release picker and install the chosen version
         StackPane install = StoreWidgets.accentButton("安装", null);
-
-        // Version picker: filled lazily from the repository's releases, so an install can target a
-        // specific version and an older one can be restored after a bad update.
-        javafx.scene.control.ComboBox<String> versionBox = new javafx.scene.control.ComboBox<>();
-        versionBox.getStyleClass().add("store-version");
-        versionBox.setPromptText("版本");
-        versionBox.setPrefWidth(130);
-        versionBox.setVisible(false);
-        versionBox.setManaged(false);
+        StackPane versions = StoreWidgets.button("版本", null);
+        versions.getStyleClass().add("store-versions-button");
+        versions.setVisible(false);
+        versions.setManaged(false);
 
         Label installedLabel = new Label();
         installedLabel.getStyleClass().add("store-installed-label");
@@ -307,17 +305,18 @@ public final class StorePage extends VBox implements
         Label progress = new Label();
         progress.getStyleClass().add("store-progress");
 
+        // A fixed-height bar keeps its own space in the layout; showing and hiding it only toggles
+        // visibility so the card does not jump around while a download runs.
         javafx.scene.control.ProgressBar bar = new javafx.scene.control.ProgressBar(0);
         bar.getStyleClass().add("store-progress-bar");
         bar.setMaxWidth(Double.MAX_VALUE);
+        bar.setPrefHeight(6);
+        bar.setMinHeight(6);
         bar.setVisible(false);
-        bar.setManaged(false);
 
         String installedVersion = installedVersion(entry);
-        if (installedVersion != null) {
+        if (installedVersion != null)
             installedLabel.setText("已安装 v" + installedVersion);
-            ((Label) install.getChildren().get(0)).setText("重新安装");
-        }
 
         toggle.setOnMouseClicked(event -> {
             boolean show = !details.isVisible();
@@ -328,8 +327,8 @@ public final class StorePage extends VBox implements
                 loadDetails(entry, details);
         });
 
-        // Load the release list once, then reveal the picker and offer an update when one exists.
-        loadVersions(entry, versionBox, install, installedLabel, installedVersion);
+        // Load the release list once, then enable the version picker and the update hint.
+        loadVersions(entry, install, versions, installedLabel, installedVersion);
 
         install.setOnMouseClicked(event -> {
             if (install.isDisabled())
@@ -338,12 +337,17 @@ public final class StorePage extends VBox implements
             ((Label) install.getChildren().get(0)).setText("准备中…");
             progress.setText("");
             bar.setVisible(true);
-            bar.setManaged(true);
             bar.setProgress(0);
-            installEntry(entry, install, progress, bar, versionBox.getValue());
+            installEntry(entry, install, progress, bar, null);
         });
 
-        HBox footer = new HBox(8, toggle, versionBox, install, installedLabel,
+        versions.setOnMouseClicked(event -> {
+            if (versions.isDisabled())
+                return;
+            promptVersionChoice(entry, install, versions, progress, bar);
+        });
+
+        HBox footer = new HBox(8, toggle, install, versions, installedLabel,
                 StoreWidgets.spacer(), progress);
         footer.setAlignment(Pos.CENTER_LEFT);
 
@@ -351,6 +355,44 @@ public final class StorePage extends VBox implements
         card.getStyleClass().add("store-card");
         card.setMaxWidth(Double.MAX_VALUE);
         return card;
+    }
+
+    /// Asks which release to install, then installs it.
+    ///
+    /// <p>A popup list is used instead of an always-visible combo box: the version picker is a
+    /// rarely needed action, and keeping it behind a button leaves the card uncluttered.</p>
+    ///
+    /// @param entry    the repository
+    /// @param install  the install button, restored on failure
+    /// @param progress the progress label
+    /// @param bar      the progress bar
+    private void promptVersionChoice(StoreSource.Entry entry, StackPane install, StackPane versions,
+                                     Label progress, javafx.scene.control.ProgressBar bar) {
+        context.getRoot().supplyAsync(() -> source.findReleases(entry.fullName()))
+                .whenComplete((releases, throwable) -> Platform.runLater(() -> {
+                    if (throwable != null || releases == null || releases.isEmpty()) {
+                        progress.setText("该仓库没有可选版本");
+                        return;
+                    }
+
+                    javafx.scene.control.ContextMenu menu = new javafx.scene.control.ContextMenu();
+                    for (StoreSource.Release release : releases) {
+                        javafx.scene.control.MenuItem item =
+                                new javafx.scene.control.MenuItem(release.version());
+                        item.setOnAction(e -> {
+                            install.setDisable(true);
+                            ((Label) install.getChildren().get(0)).setText("准备中…");
+                            progress.setText("");
+                            bar.setVisible(true);
+                            bar.setProgress(0);
+                            installEntry(entry, install, progress, bar, release.version());
+                        });
+                        menu.getItems().add(item);
+                    }
+
+                    // Anchored to the version button itself, so the list appears where clicked.
+                    menu.show(versions, javafx.geometry.Side.BOTTOM, 0, 0);
+                }));
     }
 
     /// Shortens a repository description so a card cannot grow tall.
@@ -474,8 +516,10 @@ public final class StorePage extends VBox implements
                 @Override
                 public void onProgress(long received, long total, String sourceHost) {
                     if (total > 0) {
-                        bar.setProgress((double) received / total);
-                        progress.setText(StoreInstaller.formatBytes(received)
+                        double fraction = (double) received / total;
+                        bar.setProgress(fraction);
+                        progress.setText(Math.round(fraction * 100) + "% · "
+                                + StoreInstaller.formatBytes(received)
                                 + " / " + StoreInstaller.formatBytes(total));
                     } else {
                         // Unknown size: keep the bar indeterminate and show the byte count.
@@ -486,12 +530,12 @@ public final class StorePage extends VBox implements
 
                 @Override
                 public void onInstalled(PluginDescription description) {
+                    bar.setProgress(1.0);
                     bar.setVisible(false);
-                    bar.setManaged(false);
                     progress.setText(description.getName() + " " + description.getVersion() + " 已安装");
                     ((Label) button.getChildren().get(0)).setText("重新安装");
                     button.setDisable(false);
-                    promptReload();
+                    announceInstalled(description);
                 }
 
                 @Override
@@ -513,59 +557,57 @@ public final class StorePage extends VBox implements
         button.setDisable(false);
         ((Label) button.getChildren().get(0)).setText("安装");
         bar.setVisible(false);
-        bar.setManaged(false);
         progress.setText(message);
     }
 
-    /// Loads the release list and wires the version picker plus the update hint.
+    /// Loads the release list and decides what the buttons should say.
     ///
     /// <p>Offers an update only when the newest release differs from the installed version, so the
     /// button never nags about something already up to date.</p>
     ///
     /// @param entry            the repository
-    /// @param box              the version picker to fill
-    /// @param install          the install button
+    /// @param install          the install / update button
+    /// @param versions         the version-picker button
     /// @param installedLabel   the label showing the installed version
     /// @param installedVersion the installed version, or `null` when absent
-    private void loadVersions(StoreSource.Entry entry, javafx.scene.control.ComboBox<String> box,
-                              StackPane install, Label installedLabel, String installedVersion) {
+    private void loadVersions(StoreSource.Entry entry, StackPane install, StackPane versions,
+                              Label installedLabel, String installedVersion) {
         context.getRoot().supplyAsync(() -> source.findReleases(entry.fullName()))
                 .whenComplete((releases, throwable) -> Platform.runLater(() -> {
                     if (throwable != null || releases == null || releases.isEmpty())
                         return;
 
-                    java.util.List<String> versions = new java.util.ArrayList<>();
-                    for (StoreSource.Release release : releases)
-                        versions.add(release.version());
-
-                    box.getItems().setAll(versions);
-                    box.setValue(versions.get(0));
-                    box.setVisible(true);
-                    box.setManaged(true);
+                    // The picker is only useful when there is something to pick from.
+                    if (releases.size() > 1) {
+                        versions.setVisible(true);
+                        versions.setManaged(true);
+                    }
 
                     if (installedVersion == null)
                         return;
 
-                    String newest = versions.get(0);
-                    ((Label) install.getChildren().get(0)).setText("重新安装");
+                    String newest = releases.get(0).version();
                     installedLabel.setText("已安装 v" + installedVersion);
 
-                    if (!newest.equals(installedVersion)) {
+                    if (newest.equals(installedVersion)) {
+                        ((Label) install.getChildren().get(0)).setText("重新安装");
+                    } else {
                         installedLabel.setText("已安装 v" + installedVersion + " · 可更新到 v" + newest);
                         installedLabel.getStyleClass().add("store-update-available");
-                        // Default the picker to the update so one click applies it.
-                        box.setValue(newest);
                         ((Label) install.getChildren().get(0)).setText("更新");
                     }
                 }));
     }
 
-    /// Tells the user that a reload is needed for the new plugin to run.
-    private void promptReload() {
-        context.confirm("插件已安装完成。重新加载插件后即可生效，现在重新加载吗？",
-                "插件商店",
-                PluginManager::reload,
-                () -> { });
+    /// Reports a finished install without interrupting the user.
+    ///
+    /// <p>Deliberately not a confirmation dialog: installing several plugins in a row should not
+    /// require dismissing a prompt after each one. The card shows the result and the launcher picks
+    /// the new jar up on its next start.</p>
+    ///
+    /// @param description the installed plugin
+    private void announceInstalled(PluginDescription description) {
+        context.logInfo("插件已安装：" + description.getName() + " " + description.getVersion());
     }
 
     /// Returns the installed version of a repository's plugin.

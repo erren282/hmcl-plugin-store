@@ -257,18 +257,22 @@
 }
 
 .store-progress-bar {
-    -fx-pref-height: 4px;
+    -fx-pref-height: 6px;
+    -fx-min-height: 6px;
+    -fx-max-height: 6px;
+    -fx-pref-width: 10000px;
 }
 
 .store-progress-bar > .bar {
     -fx-background-color: #2F6FD0;
-    -fx-background-radius: 2px;
-    -fx-padding: 2px;
+    -fx-background-radius: 3px;
+    -fx-background-insets: 0;
 }
 
 .store-progress-bar > .track {
     -fx-background-color: #E7EEF9;
-    -fx-background-radius: 2px;
+    -fx-background-radius: 3px;
+    -fx-background-insets: 0;
 }
 
 .store-progress {
