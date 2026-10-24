@@ -34,9 +34,8 @@ import java.util.Locale;
 /// button. Expanding a card renders that repository's README as Markdown through the launcher's
 /// own [MarkdownRenderer].</p>
 ///
-/// <p>Implements [DecoratorPage] so the launcher treats it as a normal page: the navigator shows
-/// the back arrow, `back()` pops it, and no page title is drawn beside it — which is what makes
-/// the store cover the settings sidebar instead of sitting next to it.</p>
+/// <p>Implements [DecoratorPage] so the launcher draws its normal title bar with a working back
+/// arrow; the page simply fills the content area the launcher gives it.</p>
 public final class StorePage extends VBox implements
         org.jackhuang.hmcl.ui.decorator.DecoratorPage,
         org.jackhuang.hmcl.ui.construct.PageAware {
@@ -70,8 +69,7 @@ public final class StorePage extends VBox implements
         this.onClose = onClose;
 
         getStyleClass().add("store-page");
-        // Sits in the decorator's wrapper as an overlay, so it must claim the whole area rather
-        // than its preferred size; the scroll pane inside handles the content.
+        // Fills whatever the launcher's page host gives it; the scroll pane handles overflow.
         setMaxSize(Double.MAX_VALUE, Double.MAX_VALUE);
         setFillWidth(true);
         setSpacing(0);
@@ -82,10 +80,8 @@ public final class StorePage extends VBox implements
 
     /// Pads the page down so it starts below the launcher's title bar.
     ///
-    /// <p>The page is mounted as the window's topmost overlay, so it would otherwise paint over
-    /// the title bar and swallow clicks on the back arrow. Padding the root node itself is what
-    /// actually works here — `StackPane.setMargin` has no effect on a child of a plain `Pane`
-    /// inserted this way.</p>
+    /// <p>Kept for callers that host the store outside the launcher's page host; the normal
+    /// launcher page already sits below the title bar, so it passes `0`.</p>
     ///
     /// @param height the title bar height in pixels
     public void setTopInset(double height) {
@@ -94,13 +90,6 @@ public final class StorePage extends VBox implements
             return;
         setPadding(new Insets(value, 0, 0, 0));
         context.logInfo("商店顶边距已设为 " + Math.round(value) + "px");
-    }
-
-    /// Returns the current top inset, for diagnostics.
-    ///
-    /// @return the top padding in pixels
-    public double getTopInset() {
-        return getPadding().getTop();
     }
 
     @Override
