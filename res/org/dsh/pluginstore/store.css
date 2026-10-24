@@ -239,13 +239,9 @@
     -fx-border-width: 0 0 1 0;
 }
 
-/* 版本选择弹窗 */
-.store-dialog-heading {
-    -fx-font-size: 15px;
-    -fx-font-weight: bold;
-    -fx-text-fill: -monet-on-surface;
-}
-
+/* 版本选择弹窗
+   标题、正文、按钮均复用启动器原生 jfx-layout-* / dialog-* 样式，
+   这里只保留下拉框与提示文字的必要调整。 */
 .store-dialog-hint {
     -fx-font-size: 12px;
     -fx-text-fill: -monet-on-surface-variant;

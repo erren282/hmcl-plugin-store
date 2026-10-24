@@ -400,39 +400,51 @@ public final class StorePage extends VBox implements
                     picker.getItems().setAll(labels);
                     picker.setValue(labels.get(0));
 
-                    Label hint = new Label();
-                    hint.getStyleClass().add("store-dialog-hint");
+                    Label preview = new Label();
+                    preview.getStyleClass().add("store-dialog-hint");
                     Runnable updateHint = () -> {
                         int index = labels.indexOf(picker.getValue());
                         if (index < 0 || index >= releases.size())
                             return;
                         String target = releases.get(index).version();
                         if (target.equals(currentVersion)) {
-                            hint.setText("将重新安装当前版本 v" + target);
+                            preview.setText("将重新安装当前版本 v" + target);
                         } else if (currentVersion == null) {
-                            hint.setText("将安装 v" + target);
+                            preview.setText("将安装 v" + target);
                         } else {
-                            hint.setText("将从 v" + currentVersion + " 切换为 v" + target);
+                            preview.setText("将从 v" + currentVersion + " 切换为 v" + target);
                         }
                     };
                     picker.valueProperty().addListener((obs, oldValue, newValue) -> updateHint.run());
                     updateHint.run();
 
+                    // Built exactly like the launcher's own MessageDialogPane: the same style classes
+                    // on the heading, body and actions, and JFXButtons with the native dialog-accept
+                    // / dialog-cancel classes (cancel is FLAT). Hand-rolled styles looked foreign.
                     Label heading = new Label("选择版本");
-                    heading.getStyleClass().add("store-dialog-heading");
+                    heading.getStyleClass().addAll("jfx-layout-heading", "title");
 
-                    VBox body = new VBox(10, picker, hint);
+                    VBox body = new VBox(10, picker, preview);
+                    body.getStyleClass().add("jfx-layout-body");
 
-                    com.jfoenix.controls.JFXButton confirm = FXUtils.newRaisedButton("安装");
+                    com.jfoenix.controls.JFXButton confirm =
+                            new com.jfoenix.controls.JFXButton("安装");
                     confirm.getStyleClass().add("dialog-accept");
-                    com.jfoenix.controls.JFXButton cancel = FXUtils.newRaisedButton("取消");
+
+                    com.jfoenix.controls.JFXButton cancel =
+                            new com.jfoenix.controls.JFXButton("取消");
+                    cancel.setButtonType(com.jfoenix.controls.JFXButton.ButtonType.FLAT);
                     cancel.getStyleClass().add("dialog-cancel");
+
+                    HBox actions = new HBox(cancel, confirm);
+                    actions.getStyleClass().add("jfx-layout-actions");
 
                     com.jfoenix.controls.JFXDialogLayout layout =
                             new com.jfoenix.controls.JFXDialogLayout();
+                    layout.getStyleClass().add("jfx-dialog-layout");
                     layout.setHeading(heading);
                     layout.setBody(body);
-                    layout.setActions(cancel, confirm);
+                    layout.setActions(actions);
 
                     cancel.setOnAction(event -> org.jackhuang.hmcl.ui.DialogUtils.close(layout));
                     confirm.setOnAction(event -> {
