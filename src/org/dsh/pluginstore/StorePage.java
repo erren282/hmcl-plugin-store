@@ -665,9 +665,20 @@ public final class StorePage extends VBox implements
                     } else {
                         installedLabel.setText("已安装 v" + installedVersion + " · 可更新到 v" + newest);
                         installedLabel.getStyleClass().add("store-update-available");
-                        ((Label) install.getChildren().get(0)).setText("更新");
+                        // The card greyed the button as soon as it saw the plugin installed; an
+                        // available update has to undo that, or "更新" would be disabled.
+                        enableForUpdate(install);
                     }
                 }));
+    }
+
+    /// Re-enables an install button for an available update.
+    ///
+    /// @param install the button
+    private static void enableForUpdate(StackPane install) {
+        install.setDisable(false);
+        install.getStyleClass().remove("store-installed");
+        ((Label) install.getChildren().get(0)).setText("更新");
     }
 
     /// Turns an install button into a disabled "已安装" state.
