@@ -80,6 +80,29 @@ public final class StorePage extends VBox implements
         reload();
     }
 
+    /// Pads the page down so it starts below the launcher's title bar.
+    ///
+    /// <p>The page is mounted as the window's topmost overlay, so it would otherwise paint over
+    /// the title bar and swallow clicks on the back arrow. Padding the root node itself is what
+    /// actually works here — `StackPane.setMargin` has no effect on a child of a plain `Pane`
+    /// inserted this way.</p>
+    ///
+    /// @param height the title bar height in pixels
+    public void setTopInset(double height) {
+        double value = Math.max(0, height);
+        if (Math.abs(getPadding().getTop() - value) < 0.5)
+            return;
+        setPadding(new Insets(value, 0, 0, 0));
+        context.logInfo("商店顶边距已设为 " + Math.round(value) + "px");
+    }
+
+    /// Returns the current top inset, for diagnostics.
+    ///
+    /// @return the top padding in pixels
+    public double getTopInset() {
+        return getPadding().getTop();
+    }
+
     @Override
     public void onPageShown() {
         if (entries.isEmpty())

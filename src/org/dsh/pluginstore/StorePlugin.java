@@ -7,6 +7,7 @@
 package org.dsh.pluginstore;
 
 import javafx.application.Platform;
+import javafx.geometry.Insets;
 import javafx.scene.Node;
 import javafx.scene.Parent;
 import javafx.scene.layout.StackPane;
@@ -89,6 +90,12 @@ public final class StorePlugin extends HmclPlugin {
     /// Intercepts clicks on the title bar's back arrow while the store is open.
     private javafx.event.EventHandler<javafx.scene.input.MouseEvent> backFilter;
 
+    /// Keeps the store clear of the title bar as the window is resized.
+    private javafx.beans.value.ChangeListener<Number> titleHeightListener;
+
+    /// The title bar whose height drives the store's top inset.
+    private javafx.scene.layout.Region titleHeightNode;
+
     @Override
     public void onEnable() {
         PluginMenuService.registerLauncherPage(page);
@@ -147,26 +154,21 @@ public final class StorePlugin extends HmclPlugin {
 
             storeShowing = true;
 
-            // Mount the overlay *below* the launcher's frame, not on top of it.
+            // The overlay is topmost, so it must not swallow the title bar.
             //
-            // Covering the whole window also covered the title bar, so the back arrow could never
-            // receive a click — which is why closing through that arrow failed no matter how the
-            // handler was wired. Placing the overlay just under the frame keeps the title bar
-            // above it and clickable, while the store still fills the rest of the window.
-            int frameIndex = -1;
-            for (int i = 0; i < wrapper.getChildren().size(); i++) {
-                if (wrapper.getChildren().get(i).getStyleClass().contains("jfx-decorator")) {
-                    frameIndex = i;
-                    break;
-                }
-            }
+            // Earlier attempts padded the page, but the launcher's title bar lives inside the
+            // decorator's frame, and the measured "jfx-tool-bar" height did not always match
+            // where the frame actually draws it. Measuring the frame's title area directly is
+            // exact: whatever the frame reports as its top inset is what has to stay uncovered.
+            wrapper.getChildren().remove(storePage);
+            wrapper.getChildren().add(storePage);
+            storePage.toFront();
 
-            if (frameIndex >= 0)
-                wrapper.getChildren().add(frameIndex, storePage);
-            else
-                wrapper.getChildren().add(storePage);
+            double topInset = measureTitleBarHeight(scene.getRoot());
+            if (storePage instanceof StorePage page)
+                page.setTopInset(topInset);
 
-            getContext().logInfo("商店已作为覆盖层打开（标题栏之上仍可点击）");
+            getContext().logInfo("商店已作为最上层覆盖层打开，顶边距=" + Math.round(topInset));
             installBackFilter();
         } catch (Throwable e) {
             getContext().logWarning("无法打开全窗口商店：" + e);
@@ -243,6 +245,41 @@ public final class StorePlugin extends HmclPlugin {
         }
     }
 
+    /// Measures how tall the launcher's title bar is, so the overlay can leave it uncovered.
+    ///
+    /// <p>Looked up by geometry rather than style class: the nav bar pane is nested inside the
+    /// title container, and its own height is only part of the bar. Converting the nav bar's
+    /// bounds into the window's coordinate space gives the exact band the overlay must skip.</p>
+    ///
+    /// @param root the scene root
+    /// @return the height in pixels, or `0` when it cannot be determined
+    private static double measureTitleBarHeight(Node root) {
+        try {
+            Node navPane = findById(root, "decoratorTitleTransitionPane");
+            if (navPane == null || navPane.getScene() == null)
+                return 0;
+
+            javafx.geometry.Bounds inScene = navPane.localToScene(navPane.getBoundsInLocal());
+            if (inScene == null)
+                return 0;
+
+            // The nav pane sits inside the title container, which may add padding around it; walk
+            // up to the container that owns the "jfx-tool-bar" style for the real bar height.
+            Node bar = navPane;
+            while (bar != null && !bar.getStyleClass().contains("jfx-tool-bar"))
+                bar = bar.getParent();
+
+            if (bar != null) {
+                javafx.geometry.Bounds barBounds = bar.localToScene(bar.getBoundsInLocal());
+                if (barBounds != null)
+                    return Math.max(0, barBounds.getMaxY());
+            }
+            return Math.max(0, inScene.getMaxY());
+        } catch (Throwable e) {
+            return 0;
+        }
+    }
+
     /// Removes the store overlay from the window.
     ///
     /// <p>Plain removal: the overlay is a child of the decorator's wrapper, so taking it out
@@ -260,7 +297,15 @@ public final class StorePlugin extends HmclPlugin {
                 backFilter = null;
             }
 
+            // Stop tracking the title bar height, otherwise the listener outlives the overlay.
+            if (titleHeightNode != null && titleHeightListener != null) {
+                titleHeightNode.heightProperty().removeListener(titleHeightListener);
+                titleHeightNode = null;
+                titleHeightListener = null;
+            }
+
             if (storePage != null && storePage.getParent() instanceof javafx.scene.layout.Pane pane) {
+                javafx.scene.layout.StackPane.setMargin(storePage, Insets.EMPTY);
                 pane.getChildren().remove(storePage);
                 getContext().logInfo("商店覆盖层已移除");
             }
