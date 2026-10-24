@@ -85,7 +85,8 @@ public final class StorePlugin extends HmclPlugin {
 
         StoreEntryTrigger(StorePlugin plugin) {
             this.plugin = plugin;
-            getChildren().add(new javafx.scene.control.Label("正在打开插件商店…"));
+            // Left blank on purpose: the store replaces this view within the same pulse, and a
+            // "正在打开…" placeholder only flashed on screen and confused users.
 
             parentProperty().addListener((observable, oldParent, newParent) -> {
                 if (newParent != null)
@@ -113,10 +114,59 @@ public final class StorePlugin extends HmclPlugin {
                 return;
 
             Controllers.navigate(storePage);
+
+            // Opening the entry made `PluginPage` switch to its plugin-detail view. That view is
+            // only a launch pad for the store, and leaving it in place meant the back arrow
+            // returned to a leftover "正在打开插件商店…" screen instead of the plugin list. Sending
+            // it back to the list happens after navigating so the revert runs out of sight.
+            Platform.runLater(this::restorePluginList);
+
             getContext().logInfo("插件商店已全屏打开");
         } catch (Throwable e) {
             getContext().logWarning("无法全屏打开商店：" + e);
         }
+    }
+
+    /// Returns the settings page's plugin view to its plugin list.
+    ///
+    /// <p>`PluginPage.closePluginPage()` is private, so it is invoked reflectively. Failure is
+    /// harmless: it only leaves the launcher showing the plugin detail view, which the user can
+    /// leave with that view's own back button.</p>
+    private void restorePluginList() {
+        try {
+            var scene = Controllers.getScene();
+            Node pluginPage = scene == null ? null : findPluginPage(scene.getRoot());
+            if (pluginPage == null)
+                return;
+
+            var method = pluginPage.getClass().getDeclaredMethod("closePluginPage");
+            method.setAccessible(true);
+            method.invoke(pluginPage);
+        } catch (Throwable e) {
+            getContext().logWarning("未能恢复插件列表：" + e);
+        }
+    }
+
+    /// Finds the settings page's `PluginPage` node.
+    ///
+    /// <p>Matched by class name rather than by type: the class is not part of the plugin API, so
+    /// referring to it directly would make this plugin fail to load if it ever moves.</p>
+    ///
+    /// @param root the node to search from
+    /// @return the plugin page node, or `null`
+    private static Node findPluginPage(Node root) {
+        if (root == null)
+            return null;
+        if ("org.jackhuang.hmcl.ui.main.PluginPage".equals(root.getClass().getName()))
+            return root;
+        if (root instanceof javafx.scene.Parent parent) {
+            for (Node child : parent.getChildrenUnmodifiable()) {
+                Node found = findPluginPage(child);
+                if (found != null)
+                    return found;
+            }
+        }
+        return null;
     }
 
     /// Returns whether the store is the navigator's current page.
