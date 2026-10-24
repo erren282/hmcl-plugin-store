@@ -130,15 +130,15 @@ public final class StorePage extends VBox implements
         return row;
     }
 
-    /// Builds the card area as plain, non-scrolling content.
+    /// Builds the card area, which is now the page's own scroller.
     ///
-    /// <p>No scroll pane here on purpose. The launcher hosts plugin pages inside
-    /// `PluginPageProxy`, which already wraps the page in its own `ScrollPane`; adding a second
-    /// one nested the two, and the inner pane swallowed the wheel events so nothing scrolled
-    /// until a card was expanded. Emitting plain content lets the host's single scroller carry
-    /// the whole page from the first card to the last.</p>
+    /// <p>The page is pushed straight into the launcher's navigator, so unlike a plugin page in
+    /// `PluginPageProxy` it has no host scroll pane above it — removing the local scroller left
+    /// the content with nothing to scroll it. This is therefore the single, page-wide scroller:
+    /// cards and expanded README blocks are ordinary children of it, and the wheel carries the
+    /// whole page from the first card to the last.</p>
     ///
-    /// @return the content node
+    /// @return the scroll pane
     private Node buildScrollableBody() {
         statusLabel.getStyleClass().add("store-status");
 
@@ -148,8 +148,35 @@ public final class StorePage extends VBox implements
         content.setFillWidth(true);
         content.setMaxWidth(Double.MAX_VALUE);
 
-        VBox.setVgrow(content, Priority.ALWAYS);
-        return content;
+        ScrollPane scroll = new ScrollPane(content);
+        scroll.getStyleClass().add("store-scroll");
+        scroll.setFitToWidth(true);
+        scroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        scroll.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
+        scroll.setMaxSize(Double.MAX_VALUE, Double.MAX_VALUE);
+        enableSmoothScrolling(scroll);
+        VBox.setVgrow(scroll, Priority.ALWAYS);
+        return scroll;
+    }
+
+    /// Attaches the launcher's eased wheel scrolling.
+    ///
+    /// <p>`FXUtils.smoothScrolling` is the public entry point but it does nothing when the user
+    /// disables launcher animations, so the package-private helper behind it is used directly;
+    /// if reflection fails the public helper is still applied, so scrolling never disappears.</p>
+    ///
+    /// @param scroll the scroll pane to tune
+    private static void enableSmoothScrolling(ScrollPane scroll) {
+        try {
+            Class<?> utils = Class.forName("org.jackhuang.hmcl.ui.ScrollUtils");
+            var method = utils.getDeclaredMethod("addSmoothScrolling", ScrollPane.class);
+            method.setAccessible(true);
+            method.invoke(null, scroll);
+            return;
+        } catch (Throwable ignored) {
+            // Fall through to the public helper.
+        }
+        FXUtils.smoothScrolling(scroll);
     }
 
     // --------------------------------------------------------------------- data
