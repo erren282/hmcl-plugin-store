@@ -28,18 +28,28 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
-/// The store page shown inside the launcher's plugin module.
+/// The store page shown across the launcher's whole content area.
 ///
 /// <p>One card per plugin repository: name, star count, a one-line summary and an install
 /// button. Expanding a card renders that repository's README as Markdown through the launcher's
 /// own [MarkdownRenderer].</p>
 ///
-/// <p><b>No nested scrolling.</b> The launcher hosts plugin pages inside `PluginPage`, which is
-/// itself a [ScrollPane]. Adding a second scroll pane here would swallow the wheel events and
-/// scroll an almost invisible inner viewport, which reads as "scrolling does not work". This page
-/// therefore grows to its natural height and leaves all scrolling to the host, including the
-/// README block, which is inlined instead of boxed in its own scroller.</p>
-public final class StorePage extends VBox {
+/// <p>Implements [DecoratorPage] so the launcher treats it as a normal page: the navigator shows
+/// the back arrow, `back()` pops it, and no page title is drawn beside it — which is what makes
+/// the store cover the settings sidebar instead of sitting next to it.</p>
+public final class StorePage extends VBox implements
+        org.jackhuang.hmcl.ui.decorator.DecoratorPage {
+
+    /// Page state reported to the launcher's title bar.
+    private final javafx.beans.property.ReadOnlyObjectWrapper<org.jackhuang.hmcl.ui.decorator.DecoratorPage.State> state =
+            new javafx.beans.property.ReadOnlyObjectWrapper<>(
+                    new org.jackhuang.hmcl.ui.decorator.DecoratorPage.State(
+                            "插件商店", null, true, false, true));
+
+    @Override
+    public javafx.beans.property.ReadOnlyObjectProperty<org.jackhuang.hmcl.ui.decorator.DecoratorPage.State> stateProperty() {
+        return state.getReadOnlyProperty();
+    }
 
     private final PluginContext context;
     private final StoreSource source;

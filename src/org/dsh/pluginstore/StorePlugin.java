@@ -92,15 +92,16 @@ public final class StorePlugin extends HmclPlugin {
 
     /// Opens the store across the launcher's entire content area.
     ///
-    /// <p>Uses the decorator's content list rather than navigating to the store as a standalone
-    /// page: the launcher's navigator wraps pages in its own layout, while writing straight to
-    /// the content list replaces everything, including the settings sidebar.</p>
+    /// <p>Navigates through the launcher's own navigator rather than writing straight into the
+    /// decorator's content list. The title bar's back arrow runs
+    /// [org.jackhuang.hmcl.ui.decorator.DecoratorController]'s `back()`, which only ever touches
+    /// the navigator — a page placed directly in the content list is invisible to it, which is
+    /// why the store used to stay stuck on top of everything. Going through the navigator keeps
+    /// the page in the back stack, so the arrow pops it normally.</p>
     ///
-    /// <p>The title bar's back arrow keeps its launcher binding (the button's `onAction` is
-    /// bound to `onBackNavButtonActionProperty`, so replacing that property would break it), and
-    /// an extra click filter is added on top: when the store is showing, the click closes the
-    /// store instead of running the launcher's navigation, which knows nothing about this page
-    /// and therefore did nothing.</p>
+    /// <p>The navigator fills the whole content area, so the store still covers the settings
+    /// sidebar, and because it is a real navigator entry the launcher also restores its own page
+    /// when the store is popped.</p>
     void openFullWindowStore() {
         try {
             javafx.scene.Scene scene = Controllers.getScene();
@@ -110,9 +111,11 @@ public final class StorePlugin extends HmclPlugin {
             if (storePage == null)
                 storePage = new StorePage(getContext());
 
-            Controllers.getDecorator().getDecorator().getContent().setAll(storePage);
             storeShowing = true;
+            Controllers.navigate(storePage);
 
+            // Extra safety net: intercept the arrow even if the launcher's back stack was reset
+            // by another plugin navigating in the meantime.
             installBackFilter();
         } catch (Throwable e) {
             getContext().logWarning("无法打开全窗口商店：" + e);
@@ -122,7 +125,9 @@ public final class StorePlugin extends HmclPlugin {
     /// Intercepts the title bar's back arrow while the store is open.
     ///
     /// <p>An event filter on the scene runs before the button's own action, so consuming the
-    /// press keeps the launcher's bound handler from running and lets the store close instead.</p>
+    /// click lets the store close deterministically. The navigator already pops the store on
+    /// back, but other plugins may push pages and disturb the stack, so this guarantees the
+    /// arrow always works.</p>
     private void installBackFilter() {
         if (backFilter != null)
             return;
@@ -173,6 +178,9 @@ public final class StorePlugin extends HmclPlugin {
     }
 
     /// Returns to the launcher's own content.
+    ///
+    /// <p>Navigating away is enough: the store sits on the navigator's stack, so pushing the
+    /// settings page replaces it on screen and the arrow's own `back()` would have done the same.</p>
     void closeStore() {
         storeShowing = false;
         try {
@@ -193,10 +201,15 @@ public final class StorePlugin extends HmclPlugin {
     /// Leaves the store if it is currently shown, e.g. when the plugin is disabled.
     private void leaveStore() {
         try {
-            if (storePage == null || Controllers.getDecorator() == null)
+            if (!storeShowing)
                 return;
-            if (Controllers.getDecorator().getDecorator().getContent().contains(storePage))
-                Controllers.navigate(Controllers.getRootPage());
+            storeShowing = false;
+            if (backFilter != null && Controllers.getScene() != null) {
+                Controllers.getScene().removeEventFilter(
+                        javafx.scene.input.MouseEvent.MOUSE_CLICKED, backFilter);
+                backFilter = null;
+            }
+            Controllers.navigate(Controllers.getRootPage());
         } catch (Throwable ignored) {
             // Nothing to restore.
         }
