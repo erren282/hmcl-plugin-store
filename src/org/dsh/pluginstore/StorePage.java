@@ -49,6 +49,9 @@ public final class StorePage extends VBox implements
     /// Vertical padding the description box adds around the text.
     private static final double SUMMARY_BOX_PADDING = 12;
 
+    /// Visible height of the README viewport inside a card, in pixels.
+    private static final double README_VIEWPORT_HEIGHT = 190;
+
     /// Page state reported to the launcher's title bar.
     private final javafx.beans.property.ReadOnlyObjectWrapper<org.jackhuang.hmcl.ui.decorator.DecoratorPage.State> state =
             new javafx.beans.property.ReadOnlyObjectWrapper<>(
@@ -359,23 +362,25 @@ public final class StorePage extends VBox implements
                         return;
                     }
 
-                    Node rendered;
+                    VBox readmeBox = new VBox(6);
+                    readmeBox.getStyleClass().add("store-readme-box");
+                    readmeBox.setFillWidth(true);
+                    readmeBox.setMaxWidth(Double.MAX_VALUE);
+
                     try {
-                        rendered = inline(MarkdownRenderer.render(readme));
+                        readmeBox.getChildren().add(readmeViewport(MarkdownRenderer.render(readme)));
                     } catch (Throwable e) {
                         // A malformed README must not break the page; fall back to plain text.
                         context.logWarning("README 渲染失败，改为纯文本：" + e);
                         TextArea area = new TextArea(readme);
                         area.setEditable(false);
                         area.setWrapText(true);
-                        area.setMinHeight(Region.USE_PREF_SIZE);
-                        rendered = area;
+                        area.setPrefHeight(README_VIEWPORT_HEIGHT);
+                        area.setMinHeight(README_VIEWPORT_HEIGHT);
+                        area.setMaxHeight(README_VIEWPORT_HEIGHT);
+                        readmeBox.getChildren().add(area);
                     }
 
-                    VBox readmeBox = new VBox(rendered);
-                    readmeBox.getStyleClass().add("store-readme");
-                    readmeBox.setFillWidth(true);
-                    readmeBox.setMaxWidth(Double.MAX_VALUE);
                     details.getChildren().add(readmeBox);
 
                     Label link = new Label("在 GitHub 上查看：" + entry.homepage());
@@ -385,32 +390,30 @@ public final class StorePage extends VBox implements
                 }));
     }
 
-    /// Flattens the renderer's own scroll pane so the README flows inline.
+    /// Puts the rendered README into a fixed-height viewport.
     ///
-    /// <p>[MarkdownRenderer#render] returns a [ScrollPane] with a fixed viewport. Left as is that
-    /// becomes a second scroller inside the page, so the wheel gets stuck in it and the reader has
-    /// to scroll a small box before the page moves. Only its content is kept, which makes the
-    /// README an ordinary block of the page and lets the single outer scroller carry it.</p>
+    /// <p>A README can run to hundreds of lines. Laid out inline it stretched its card over the
+    /// whole page, so the introduction is now kept inside a small bordered box of its own and
+    /// scrolls internally — the card stays compact and the description remains readable.</p>
+    ///
+    /// <p>[MarkdownRenderer#render] already returns a [ScrollPane], so it is reused rather than
+    /// wrapped a second time.</p>
     ///
     /// @param rendered the node returned by the renderer
-    /// @return the content node, ready to be placed inline
-    private static Node inline(Node rendered) {
-        if (!(rendered instanceof ScrollPane inner))
-            return rendered;
+    /// @return the viewport holding the README
+    private ScrollPane readmeViewport(Node rendered) {
+        ScrollPane scroll = rendered instanceof ScrollPane inner
+                ? inner
+                : new ScrollPane(rendered);
 
-        Node content = inner.getContent();
-        inner.setContent(null); // detach so the scroll pane cannot swallow wheel input
-        if (content == null)
-            return new Label();
-
-        if (content instanceof Region region) {
-            region.setMaxWidth(Double.MAX_VALUE);
-            // Let the block grow to its natural height instead of a viewport-sized box.
-            region.setMinHeight(Region.USE_PREF_SIZE);
-            region.setPrefHeight(Region.USE_COMPUTED_SIZE);
-            region.setMaxHeight(Double.MAX_VALUE);
-        }
-        return content;
+        scroll.setFitToWidth(true);
+        scroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        scroll.setPrefHeight(README_VIEWPORT_HEIGHT);
+        scroll.setMinHeight(README_VIEWPORT_HEIGHT);
+        scroll.setMaxHeight(README_VIEWPORT_HEIGHT);
+        scroll.getStyleClass().add("store-readme");
+        enableSmoothScrolling(scroll);
+        return scroll;
     }
 
     // ------------------------------------------------------------------ install

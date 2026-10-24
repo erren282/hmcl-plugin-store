@@ -148,13 +148,24 @@
 
 /* README 区域：不再自带滚动条，直接内联在卡片里。
    横向撑满，纵向由外层 PluginPage 的 ScrollPane 统一滚动。 */
+/* README 介绍框：固定高度、内部滚动，卡片不会被长 README 撑高 */
 .store-readme {
     -fx-background-color: #FAFBFD;
+    -fx-background: transparent;
     -fx-background-radius: 4px;
     -fx-border-color: #EDF1F7;
     -fx-border-width: 1px;
     -fx-border-radius: 4px;
+    -fx-padding: 0;
+    -fx-max-width: infinity;
+}
+
+.store-readme > .viewport {
+    -fx-background-color: transparent;
     -fx-padding: 8 10 8 10;
+}
+
+.store-readme-box {
     -fx-max-width: infinity;
 }
 
