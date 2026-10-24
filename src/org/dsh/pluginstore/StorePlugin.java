@@ -11,7 +11,6 @@ import javafx.scene.Node;
 import javafx.scene.Parent;
 import org.jackhuang.hmcl.plugin.HmclPlugin;
 import org.jackhuang.hmcl.plugin.PluginContext;
-import org.jackhuang.hmcl.plugin.PluginLauncherPage;
 import org.jackhuang.hmcl.plugin.PluginMenuService;
 import org.jackhuang.hmcl.ui.Controllers;
 
@@ -47,37 +46,65 @@ public final class StorePlugin extends HmclPlugin {
     /// The single store page instance, reused so its state survives navigation.
     private StorePage storePage;
 
-    /// The sidebar entry the plugin registers.
-    private final PluginLauncherPage page = new PluginLauncherPage() {
+    /// The plugin-module entry that hosts the store.
+    ///
+    /// <p>Registered with `registerPage`, i.e. it appears in **设置 → 插件 → 插件页面**, and the
+    /// entry is moved to the top of that list right after registration so the store is the first
+    /// thing the user sees in the plugin section.</p>
+    private final org.jackhuang.hmcl.plugin.PluginPageAction page =
+            new org.jackhuang.hmcl.plugin.PluginPageAction() {
 
-        @Override
-        public String getTitle() {
-            return "插件商店";
-        }
+                @Override
+                public String getTitle() {
+                    return "插件商店";
+                }
 
-        @Override
-        public org.jackhuang.hmcl.ui.SVG getIcon() {
-            return org.jackhuang.hmcl.ui.SVG.EXTENSION;
-        }
+                @Override
+                public String getDescription() {
+                    return "浏览 GitHub topic：" + StoreSource.TOPIC + " 下的插件，一键安装";
+                }
 
-        @Override
-        public Node createPage() {
-            if (storePage == null)
-                storePage = new StorePage(getContext());
-            return storePage;
-        }
-    };
+                @Override
+                public Node createPage() {
+                    if (storePage == null)
+                        storePage = new StorePage(getContext());
+                    return storePage;
+                }
+            };
+
+    /// Moves the store entry to the first position in the plugin-page list.
+    ///
+    /// <p>`registerPage` only appends, and it schedules the append on the FX thread, so the
+    /// reorder has to run after that. Repeating it on every list change keeps the store on top
+    /// even when other plugins register their pages later.</p>
+    private void pinToTop() {
+        PluginMenuService.getPages().addListener(
+                (javafx.collections.ListChangeListener<org.jackhuang.hmcl.plugin.PluginPageAction>) change ->
+                        moveToFirst());
+        moveToFirst();
+    }
+
+    /// Reorders the plugin-page list so this plugin's entry is the first one.
+    private void moveToFirst() {
+        var pages = PluginMenuService.getPages();
+        if (!pages.contains(page) || pages.indexOf(page) == 0)
+            return;
+        pages.remove(page);
+        pages.add(0, page);
+    }
 
     @Override
     public void onEnable() {
-        PluginMenuService.registerLauncherPage(page);
+        PluginMenuService.registerPage(page);
+        pinToTop();
         installStyles();
-        getContext().logInfo("插件商店已启用，数据源：GitHub topic " + StoreSource.TOPIC);
+        getContext().logInfo("插件商店已启用（设置 → 插件 → 插件页面首位），数据源：GitHub topic "
+                + StoreSource.TOPIC);
     }
 
     @Override
     public void onDisable() {
-        PluginMenuService.unregisterLauncherPage(page);
+        PluginMenuService.unregisterPage(page);
         removeStyles();
         getContext().logInfo("插件商店已停用");
     }
