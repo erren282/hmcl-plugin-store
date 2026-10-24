@@ -69,6 +69,12 @@ public final class StorePlugin extends HmclPlugin {
     /// The full-window store page, created once and reused.
     private Node storePage;
 
+    /// Whether the store currently occupies the launcher's content area.
+    private boolean storeShowing;
+
+    /// Intercepts clicks on the title bar's back arrow while the store is open.
+    private javafx.event.EventHandler<javafx.scene.input.MouseEvent> backFilter;
+
     @Override
     public void onEnable() {
         PluginMenuService.registerPage(page);
@@ -88,8 +94,13 @@ public final class StorePlugin extends HmclPlugin {
     ///
     /// <p>Uses the decorator's content list rather than navigating to the store as a standalone
     /// page: the launcher's navigator wraps pages in its own layout, while writing straight to
-    /// the content list replaces everything, including the settings sidebar. The launcher's
-    /// sidebar entry is restored by navigating back to the settings page.</p>
+    /// the content list replaces everything, including the settings sidebar.</p>
+    ///
+    /// <p>The title bar's back arrow keeps its launcher binding (the button's `onAction` is
+    /// bound to `onBackNavButtonActionProperty`, so replacing that property would break it), and
+    /// an extra click filter is added on top: when the store is showing, the click closes the
+    /// store instead of running the launcher's navigation, which knows nothing about this page
+    /// and therefore did nothing.</p>
     void openFullWindowStore() {
         try {
             javafx.scene.Scene scene = Controllers.getScene();
@@ -97,17 +108,80 @@ public final class StorePlugin extends HmclPlugin {
                 return;
 
             if (storePage == null)
-                storePage = new StorePage(getContext(), this::closeStore);
+                storePage = new StorePage(getContext());
 
             Controllers.getDecorator().getDecorator().getContent().setAll(storePage);
+            storeShowing = true;
+
+            installBackFilter();
         } catch (Throwable e) {
             getContext().logWarning("无法打开全窗口商店：" + e);
         }
     }
 
+    /// Intercepts the title bar's back arrow while the store is open.
+    ///
+    /// <p>An event filter on the scene runs before the button's own action, so consuming the
+    /// press keeps the launcher's bound handler from running and lets the store close instead.</p>
+    private void installBackFilter() {
+        if (backFilter != null)
+            return;
+
+        backFilter = event -> {
+            if (!storeShowing)
+                return;
+            if (!(event.getTarget() instanceof Node target))
+                return;
+
+            Node button = target;
+            while (button != null && !button.getStyleClass().contains("jfx-decorator-button"))
+                button = button.getParent();
+            if (button == null)
+                return;
+
+            // Only the left-hand back arrow, not the window buttons on the right.
+            if (!isLeftNavButton(button))
+                return;
+
+            event.consume();
+            closeStore();
+        };
+
+        javafx.scene.Scene scene = Controllers.getScene();
+        if (scene != null)
+            scene.addEventFilter(javafx.scene.input.MouseEvent.MOUSE_CLICKED, backFilter);
+    }
+
+    /// Returns whether a title-bar button sits in the nav bar's left box.
+    ///
+    /// @param button the button
+    /// @return whether it is the back arrow
+    private boolean isLeftNavButton(Node button) {
+        try {
+            javafx.scene.Node navPane = findById(Controllers.getScene().getRoot(),
+                    "decoratorTitleTransitionPane");
+            if (navPane == null)
+                return false;
+            Node parent = navPane.getParent();
+            if (!(parent instanceof javafx.scene.Parent nav) || nav.getChildrenUnmodifiable().isEmpty())
+                return false;
+            Node left = nav.getChildrenUnmodifiable().get(0);
+            return left instanceof javafx.scene.Parent box && box.getChildrenUnmodifiable().contains(button);
+        } catch (Throwable e) {
+            return false;
+        }
+    }
+
     /// Returns to the launcher's own content.
     void closeStore() {
+        storeShowing = false;
         try {
+            if (backFilter != null && Controllers.getScene() != null) {
+                Controllers.getScene().removeEventFilter(
+                        javafx.scene.input.MouseEvent.MOUSE_CLICKED, backFilter);
+                backFilter = null;
+            }
+
             Controllers.getSettingsPage().showGameSettings(
                     org.jackhuang.hmcl.setting.GameDirectoryManager.getSelectedRepository());
             Controllers.navigate(Controllers.getSettingsPage());
@@ -180,6 +254,26 @@ public final class StorePlugin extends HmclPlugin {
         } else {
             Platform.runLater(remove);
         }
+    }
+
+    /// Finds a descendant by id without relying on CSS being applied.
+    ///
+    /// @param root the node to search from
+    /// @param id   the id to look for
+    /// @return the matching node, or `null`
+    private static Node findById(Node root, String id) {
+        if (root == null)
+            return null;
+        if (id.equals(root.getId()))
+            return root;
+        if (root instanceof Parent parent) {
+            for (Node child : parent.getChildrenUnmodifiable()) {
+                Node found = findById(child, id);
+                if (found != null)
+                    return found;
+            }
+        }
+        return null;
     }
 
     /// Returns the launcher's scene root, or `null` while the window is still being built.

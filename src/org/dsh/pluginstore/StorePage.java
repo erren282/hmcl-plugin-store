@@ -44,7 +44,6 @@ public final class StorePage extends VBox {
     private final PluginContext context;
     private final StoreSource source;
     private final StoreInstaller installer;
-    private final Runnable onClose;
 
     private final VBox cards = new VBox(10);
     private final Label statusLabel = new Label();
@@ -53,11 +52,10 @@ public final class StorePage extends VBox {
     /// Every entry fetched so far, so the search box can filter without refetching.
     private final List<StoreSource.Entry> entries = new ArrayList<>();
 
-    public StorePage(PluginContext context, Runnable onClose) {
+    public StorePage(PluginContext context) {
         this.context = context;
         this.source = new StoreSource(context);
         this.installer = new StoreInstaller(context);
-        this.onClose = onClose;
 
         getStyleClass().add("store-page");
         // The page occupies the decorator's content slot, so it fills whatever space that gives
@@ -72,7 +70,10 @@ public final class StorePage extends VBox {
 
     // -------------------------------------------------------------------- header
 
-    /// Builds the title bar: back button, title, search field and refresh.
+    /// Builds the title bar: title, search field and refresh.
+    ///
+    /// <p>No back button here on purpose — the launcher's own title bar already shows a back
+    /// arrow, and that arrow is wired to the store's close action by [StorePlugin].</p>
     ///
     /// @return the header row
     private Node buildHeader() {
@@ -90,9 +91,8 @@ public final class StorePage extends VBox {
         searchField.textProperty().addListener((observable, oldValue, newValue) -> applyFilter());
 
         StackPane refresh = StoreWidgets.button("刷新", this::reload);
-        StackPane back = StoreWidgets.button("返回设置", onClose);
 
-        HBox actions = new HBox(8, searchField, refresh, back);
+        HBox actions = new HBox(8, searchField, refresh);
         actions.setAlignment(Pos.CENTER_RIGHT);
 
         HBox row = new HBox(12, texts, StoreWidgets.spacer(), actions);
@@ -104,8 +104,9 @@ public final class StorePage extends VBox {
 
     /// Builds the scrollable card area.
     ///
-    /// <p>The store now owns the whole window, so this is the page's only scroller — there is no
-    /// host scroll pane above it any more, and nesting is avoided.</p>
+    /// <p>The store owns the whole window, so this is the page's only scroller. Scrolling is
+    /// driven by the launcher's own `FXUtils.smoothScrolling`, which already animates the wheel;
+    /// adding a second handler on top would fight it for `vvalue` and make scrolling stutter.</p>
     ///
     /// @return the scroll pane
     private Node buildScrollableBody() {
@@ -120,7 +121,6 @@ public final class StorePage extends VBox {
         scroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
         scroll.getStyleClass().add("store-scroll");
         FXUtils.smoothScrolling(scroll);
-        StoreWidgets.installSmoothWheel(scroll);
         VBox.setVgrow(scroll, Priority.ALWAYS);
         return scroll;
     }
