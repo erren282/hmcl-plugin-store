@@ -1,5 +1,5 @@
 /*
- * PCL 商店插件 —— 商店页面
+ * 插件商店 —— 市场页面
  *
  * 本插件是第三方独立作品，与 HMCL 官方无关。
  */
@@ -11,28 +11,26 @@ import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
-import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
-import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import org.jackhuang.hmcl.plugin.PluginContext;
 import org.jackhuang.hmcl.plugin.PluginDescription;
 import org.jackhuang.hmcl.plugin.PluginManager;
 import org.jackhuang.hmcl.ui.FXUtils;
+import org.jackhuang.hmcl.ui.construct.MarkdownRenderer;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
-/// The store page: one card per plugin repository, with stars, a collapsible description and an
-/// install button.
+/// The store page shown inside the launcher's plugin module.
 ///
-/// <p>Data is fetched on a background thread; the page shows a loading hint and replaces it once
-/// the repositories arrive. Filtering is local, so typing in the search field never hits the
-/// network again.</p>
+/// <p>One card per plugin repository: name, star count, a one-line summary and an install
+/// button. Expanding a card renders that repository's README as Markdown through the launcher's
+/// own [MarkdownRenderer], so headings, lists, code blocks and links look native.</p>
 public final class StorePage extends VBox {
 
     private final PluginContext context;
@@ -42,6 +40,7 @@ public final class StorePage extends VBox {
     private final VBox cards = new VBox(10);
     private final Label statusLabel = new Label();
     private final TextField searchField = new TextField();
+    private final ScrollPane scroll = new ScrollPane();
 
     /// Every entry fetched so far, so the search box can filter without refetching.
     private final List<StoreSource.Entry> entries = new ArrayList<>();
@@ -79,7 +78,6 @@ public final class StorePage extends VBox {
         searchField.textProperty().addListener((observable, oldValue, newValue) -> applyFilter());
 
         StackPane refresh = StoreWidgets.button("刷新", this::reload);
-        refresh.getStyleClass().add("store-refresh");
 
         HBox actions = new HBox(8, searchField, refresh);
         actions.setAlignment(Pos.CENTER_RIGHT);
@@ -102,12 +100,17 @@ public final class StorePage extends VBox {
     /// @return the scroll pane
     private Node buildBody() {
         cards.setFillWidth(true);
+        cards.setPadding(new Insets(2, 8, 12, 2));
 
-        ScrollPane scroll = new ScrollPane(cards);
+        scroll.setContent(cards);
         scroll.setFitToWidth(true);
         scroll.getStyleClass().add("store-scroll");
-        VBox.setVgrow(scroll, Priority.ALWAYS);
+        scroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        scroll.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
+        // The launcher's own helper gives wheel scrolling a smooth, eased feel on every platform.
         FXUtils.smoothScrolling(scroll);
+        StoreWidgets.installSmoothWheel(scroll);
+        VBox.setVgrow(scroll, Priority.ALWAYS);
         return scroll;
     }
 
@@ -193,10 +196,9 @@ public final class StorePage extends VBox {
         titleRow.setAlignment(Pos.CENTER_LEFT);
 
         // The full README lives in a collapsible area so the list stays scannable.
-        VBox details = new VBox();
+        VBox details = new VBox(6);
         details.setVisible(false);
         details.setManaged(false);
-        details.setSpacing(6);
         details.getStyleClass().add("store-details");
 
         StackPane toggle = StoreWidgets.button("显示全部", null);
@@ -206,11 +208,10 @@ public final class StorePage extends VBox {
         Label progress = new Label();
         progress.getStyleClass().add("store-progress");
 
-        final boolean[] installed = {isInstalled(entry)};
-        if (installed[0]) {
+        if (isInstalled(entry)) {
             install.setDisable(true);
             install.getStyleClass().add("store-installed");
-            ((Label) ((StackPane) install).getChildren().get(0)).setText("已安装");
+            ((Label) install.getChildren().get(0)).setText("已安装");
         }
 
         toggle.setOnMouseClicked(event -> {
@@ -239,7 +240,7 @@ public final class StorePage extends VBox {
         return card;
     }
 
-    /// Lazily loads the README into a card's detail area.
+    /// Lazily loads the README into a card's detail area and renders it as Markdown.
     ///
     /// @param entry   the repository
     /// @param details the container to fill
@@ -252,16 +253,46 @@ public final class StorePage extends VBox {
                 .whenComplete((readme, throwable) -> Platform.runLater(() -> {
                     details.getChildren().clear();
                     if (throwable != null || readme == null || readme.isBlank()) {
-                        details.getChildren().add(new Label("该仓库没有可显示的 README。"));
+                        details.getChildren().add(hint("该仓库没有可显示的 README。"));
                         return;
                     }
 
-                    TextArea area = new TextArea(readme);
-                    area.setEditable(false);
-                    area.setWrapText(true);
-                    area.setPrefRowCount(10);
-                    area.getStyleClass().add("store-readme");
-                    details.getChildren().add(area);
+                    Node rendered;
+                    try {
+                        rendered = MarkdownRenderer.render(readme);
+                    } catch (Throwable e) {
+                        // A malformed README must not break the page; fall back to plain text.
+                        context.logWarning("README 渲染失败，改为纯文本：" + e);
+                        javafx.scene.control.TextArea area = new javafx.scene.control.TextArea(readme);
+                        area.setEditable(false);
+                        area.setWrapText(true);
+                        area.setPrefRowCount(10);
+                        rendered = area;
+                    }
+
+                    // MarkdownRenderer already returns a scroll pane; only size it and give it
+                    // the same eased wheel behaviour as the list.
+                    Node readmeView = rendered;
+                    if (readmeView instanceof ScrollPane markdownScroll) {
+                        markdownScroll.setFitToWidth(true);
+                        markdownScroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+                        markdownScroll.setPrefViewportHeight(260);
+                        markdownScroll.setMaxHeight(320);
+                        markdownScroll.getStyleClass().add("store-readme-scroll");
+                        FXUtils.smoothScrolling(markdownScroll);
+                        StoreWidgets.installSmoothWheel(markdownScroll);
+                    } else {
+                        ScrollPane wrapper = new ScrollPane(readmeView);
+                        wrapper.setFitToWidth(true);
+                        wrapper.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+                        wrapper.setPrefViewportHeight(260);
+                        wrapper.getStyleClass().add("store-readme-scroll");
+                        FXUtils.smoothScrolling(wrapper);
+                        StoreWidgets.installSmoothWheel(wrapper);
+                        readmeView = wrapper;
+                    }
+
+                    details.getChildren().add(readmeView);
 
                     Label link = new Label("在 GitHub 上查看：" + entry.homepage());
                     link.getStyleClass().add("store-link");

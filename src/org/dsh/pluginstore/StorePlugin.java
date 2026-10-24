@@ -11,10 +11,9 @@ import javafx.scene.Node;
 import javafx.scene.Parent;
 import org.jackhuang.hmcl.plugin.HmclPlugin;
 import org.jackhuang.hmcl.plugin.PluginContext;
-import org.jackhuang.hmcl.plugin.PluginLauncherPage;
 import org.jackhuang.hmcl.plugin.PluginMenuService;
+import org.jackhuang.hmcl.plugin.PluginPageAction;
 import org.jackhuang.hmcl.ui.Controllers;
-import org.jackhuang.hmcl.ui.SVG;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -38,8 +37,12 @@ public final class StorePlugin extends HmclPlugin {
     /// The style sheet URL applied to the scene root, or `null`.
     private String styleUrl;
 
-    /// The sidebar page the plugin registers.
-    private final PluginLauncherPage page = new PluginLauncherPage() {
+    /// The plugin-module page that hosts the store.
+    ///
+    /// <p>Registered through `registerPage` rather than the sidebar: the store is a plugin
+    /// management feature, so it belongs next to the other plugin pages inside
+    /// 设置 → 插件, where the launcher already lists installed plugins.</p>
+    private final PluginPageAction page = new PluginPageAction() {
 
         @Override
         public String getTitle() {
@@ -47,9 +50,8 @@ public final class StorePlugin extends HmclPlugin {
         }
 
         @Override
-        public SVG getIcon() {
-            // The launcher has no storefront glyph; EXTENSION (a puzzle piece) reads as "plugins".
-            return SVG.EXTENSION;
+        public String getDescription() {
+            return "浏览 GitHub topic：" + StoreSource.TOPIC + " 下的插件，一键安装";
         }
 
         @Override
@@ -60,14 +62,14 @@ public final class StorePlugin extends HmclPlugin {
 
     @Override
     public void onEnable() {
-        PluginMenuService.registerLauncherPage(page);
+        PluginMenuService.registerPage(page);
         installStyles();
-        getContext().logInfo("插件商店已启用，数据源：GitHub topic " + StoreSource.TOPIC);
+        getContext().logInfo("插件商店已启用（插件模块内），数据源：GitHub topic " + StoreSource.TOPIC);
     }
 
     @Override
     public void onDisable() {
-        PluginMenuService.unregisterLauncherPage(page);
+        PluginMenuService.unregisterPage(page);
         removeStyles();
         getContext().logInfo("插件商店已停用");
     }
