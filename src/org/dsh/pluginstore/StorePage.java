@@ -44,6 +44,7 @@ public final class StorePage extends VBox {
     private final PluginContext context;
     private final StoreSource source;
     private final StoreInstaller installer;
+    private final Runnable onClose;
 
     private final VBox cards = new VBox(10);
     private final Label statusLabel = new Label();
@@ -52,71 +53,26 @@ public final class StorePage extends VBox {
     /// Every entry fetched so far, so the search box can filter without refetching.
     private final List<StoreSource.Entry> entries = new ArrayList<>();
 
-    public StorePage(PluginContext context) {
+    public StorePage(PluginContext context, Runnable onClose) {
         this.context = context;
         this.source = new StoreSource(context);
         this.installer = new StoreInstaller(context);
+        this.onClose = onClose;
 
         getStyleClass().add("store-page");
-        setPadding(new Insets(4, 8, 16, 0));
-        setSpacing(12);
-        // Fill the host's width and let the host's scroll pane grow with the content.
-        setMaxWidth(Double.MAX_VALUE);
+        // The page occupies the decorator's content slot, so it fills whatever space that gives
+        // (the whole window) and scrolls internally instead of relying on a host scroller.
+        setMaxSize(Double.MAX_VALUE, Double.MAX_VALUE);
         setFillWidth(true);
+        setSpacing(0);
 
-        getChildren().addAll(buildHeader(), buildStatusRow(), cards);
-        fillHostViewport();
+        getChildren().addAll(buildHeader(), buildScrollableBody());
         reload();
-    }
-
-    /// Stretches the page across the launcher's whole content area.
-    ///
-    /// <p>`PluginPage` wraps a plugin page in a `VBox` together with a back bar, and a `VBox`
-    /// gives its children only their preferred width unless told otherwise. A page therefore
-    /// renders at its natural width — visibly only the right part of the window — no matter how
-    /// wide the content is. Filling the parent requires the page to grow horizontally and to ask
-    /// for the full viewport height, which is what this does once the host is known.</p>
-    private void fillHostViewport() {
-        // Grow horizontally inside the wrapper VBox.
-        setMaxWidth(Double.MAX_VALUE);
-        if (getParent() instanceof VBox parent) {
-            VBox.setVgrow(this, Priority.ALWAYS);
-        }
-
-        sceneProperty().addListener((observable, oldScene, newScene) -> {
-            if (newScene == null)
-                return;
-
-            ScrollPane host = null;
-            javafx.scene.Node ancestor = getParent();
-            while (ancestor != null) {
-                if (ancestor instanceof ScrollPane pane) {
-                    host = pane;
-                    break;
-                }
-                ancestor = ancestor.getParent();
-            }
-            if (host == null)
-                return;
-
-            // Take the wrapper's full width too, so the search bar and cards span the window.
-            if (getParent() instanceof Region wrapper) {
-                wrapper.setMaxWidth(Double.MAX_VALUE);
-                if (wrapper.getParent() instanceof VBox pane) {
-                    VBox.setVgrow(wrapper, Priority.ALWAYS);
-                }
-            }
-
-            var viewport = host.viewportBoundsProperty();
-            minHeightProperty().unbind();
-            minHeightProperty().bind(javafx.beans.binding.Bindings.createDoubleBinding(
-                    () -> Math.max(0, viewport.get().getHeight() - 24), viewport));
-        });
     }
 
     // -------------------------------------------------------------------- header
 
-    /// Builds the title, the search field and the refresh button.
+    /// Builds the title bar: back button, title, search field and refresh.
     ///
     /// @return the header row
     private Node buildHeader() {
@@ -130,26 +86,43 @@ public final class StorePage extends VBox {
 
         searchField.setPromptText("搜索插件名称或简介");
         searchField.getStyleClass().add("store-search");
-        searchField.setPrefWidth(220);
+        searchField.setPrefWidth(240);
         searchField.textProperty().addListener((observable, oldValue, newValue) -> applyFilter());
 
         StackPane refresh = StoreWidgets.button("刷新", this::reload);
+        StackPane back = StoreWidgets.button("返回设置", onClose);
 
-        HBox actions = new HBox(8, searchField, refresh);
+        HBox actions = new HBox(8, searchField, refresh, back);
         actions.setAlignment(Pos.CENTER_RIGHT);
 
         HBox row = new HBox(12, texts, StoreWidgets.spacer(), actions);
         row.setAlignment(Pos.CENTER_LEFT);
-        row.setPadding(new Insets(0, 0, 4, 0));
+        row.setPadding(new Insets(12, 16, 12, 16));
+        row.getStyleClass().add("store-header");
         return row;
     }
 
-    /// Builds the small status line under the header.
+    /// Builds the scrollable card area.
     ///
-    /// @return the status row
-    private Node buildStatusRow() {
+    /// <p>The store now owns the whole window, so this is the page's only scroller — there is no
+    /// host scroll pane above it any more, and nesting is avoided.</p>
+    ///
+    /// @return the scroll pane
+    private Node buildScrollableBody() {
         statusLabel.getStyleClass().add("store-status");
-        return new HBox(statusLabel);
+
+        VBox content = new VBox(10, statusLabel, cards);
+        content.setPadding(new Insets(12, 16, 16, 16));
+        content.setFillWidth(true);
+
+        ScrollPane scroll = new ScrollPane(content);
+        scroll.setFitToWidth(true);
+        scroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        scroll.getStyleClass().add("store-scroll");
+        FXUtils.smoothScrolling(scroll);
+        StoreWidgets.installSmoothWheel(scroll);
+        VBox.setVgrow(scroll, Priority.ALWAYS);
+        return scroll;
     }
 
     // --------------------------------------------------------------------- data

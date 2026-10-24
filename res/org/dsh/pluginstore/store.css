@@ -153,7 +153,49 @@
     -fx-text-fill: #4A4A4A;
 }
 
-/* 页面本体：不设自己的滚动条，高度由宿主视口决定 */
+/* 页面本体：占据装饰器的整个内容区（含左侧设置栏的位置） */
 .store-page {
+    -fx-background-color: #F5F9FE;
+}
+
+/* 顶部标题栏：白底 + 细分隔线，与下方列表区分开 */
+.store-header {
+    -fx-background-color: #FFFFFF;
+    -fx-border-color: transparent transparent #E4EAF2 transparent;
+    -fx-border-width: 0 0 1 0;
+}
+
+/* 列表滚动区：本页是唯一滚动容器，不嵌套 */
+.store-scroll {
+    -fx-background-color: transparent;
+    -fx-background: transparent;
+}
+
+.store-scroll > .viewport {
+    -fx-background-color: transparent;
+}
+
+.store-scroll > .scroll-bar:vertical {
+    -fx-background-color: transparent;
+    -fx-pref-width: 10px;
+}
+
+.store-scroll > .scroll-bar:vertical > .thumb {
+    -fx-background-color: #CBD8EA;
+    -fx-background-radius: 5px;
+}
+
+.store-scroll > .scroll-bar:vertical > .thumb:hover {
+    -fx-background-color: #A9BEDB;
+}
+
+.store-scroll > .scroll-bar > .increment-button,
+.store-scroll > .scroll-bar > .decrement-button {
+    -fx-padding: 0;
+    -fx-pref-height: 0;
+}
+
+.store-scroll > .scroll-bar:vertical > .track,
+.store-scroll > .scroll-bar:vertical > .track-background {
     -fx-background-color: transparent;
 }

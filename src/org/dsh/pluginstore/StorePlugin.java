@@ -9,6 +9,7 @@ package org.dsh.pluginstore;
 import javafx.application.Platform;
 import javafx.scene.Node;
 import javafx.scene.Parent;
+import javafx.scene.layout.StackPane;
 import org.jackhuang.hmcl.plugin.HmclPlugin;
 import org.jackhuang.hmcl.plugin.PluginContext;
 import org.jackhuang.hmcl.plugin.PluginMenuService;
@@ -37,11 +38,13 @@ public final class StorePlugin extends HmclPlugin {
     /// The style sheet URL applied to the scene root, or `null`.
     private String styleUrl;
 
-    /// The plugin-module page that hosts the store.
+    /// The plugin-module entry that opens the store full-window.
     ///
-    /// <p>Registered through `registerPage` rather than the sidebar: the store is a plugin
-    /// management feature, so it belongs next to the other plugin pages inside
-    /// 设置 → 插件, where the launcher already lists installed plugins.</p>
+    /// <p>The store must cover the whole window, including the settings sidebar, so it cannot be
+    /// a page *inside* the settings page: the launcher renders plugin-module pages in the right
+    /// content area, which leaves the sidebar visible beside it. This entry therefore only acts
+    /// as a launch button — clicking it navigates the launcher's whole content area to a
+    /// full-window store page.</p>
     private final PluginPageAction page = new PluginPageAction() {
 
         @Override
@@ -51,27 +54,78 @@ public final class StorePlugin extends HmclPlugin {
 
         @Override
         public String getDescription() {
-            return "浏览 GitHub topic：" + StoreSource.TOPIC + " 下的插件，一键安装";
+            return "全屏浏览 GitHub topic：" + StoreSource.TOPIC + " 下的插件，一键安装";
         }
 
         @Override
         public Node createPage() {
-            return new StorePage(getContext());
+            // Navigate is deferred: createPage runs while the launcher is building the plugin
+            // page, and replacing the whole content area during that build would fight it.
+            javafx.application.Platform.runLater(StorePlugin.this::openFullWindowStore);
+            return new StackPane();
         }
     };
+
+    /// The full-window store page, created once and reused.
+    private Node storePage;
 
     @Override
     public void onEnable() {
         PluginMenuService.registerPage(page);
         installStyles();
-        getContext().logInfo("插件商店已启用（插件模块内），数据源：GitHub topic " + StoreSource.TOPIC);
+        getContext().logInfo("插件商店已启用（全窗口模式），数据源：GitHub topic " + StoreSource.TOPIC);
     }
 
     @Override
     public void onDisable() {
         PluginMenuService.unregisterPage(page);
         removeStyles();
+        leaveStore();
         getContext().logInfo("插件商店已停用");
+    }
+
+    /// Opens the store across the launcher's entire content area.
+    ///
+    /// <p>Uses the decorator's content list rather than navigating to the store as a standalone
+    /// page: the launcher's navigator wraps pages in its own layout, while writing straight to
+    /// the content list replaces everything, including the settings sidebar. The launcher's
+    /// sidebar entry is restored by navigating back to the settings page.</p>
+    void openFullWindowStore() {
+        try {
+            javafx.scene.Scene scene = Controllers.getScene();
+            if (scene == null || Controllers.getDecorator() == null)
+                return;
+
+            if (storePage == null)
+                storePage = new StorePage(getContext(), this::closeStore);
+
+            Controllers.getDecorator().getDecorator().getContent().setAll(storePage);
+        } catch (Throwable e) {
+            getContext().logWarning("无法打开全窗口商店：" + e);
+        }
+    }
+
+    /// Returns to the launcher's own content.
+    void closeStore() {
+        try {
+            Controllers.getSettingsPage().showGameSettings(
+                    org.jackhuang.hmcl.setting.GameDirectoryManager.getSelectedRepository());
+            Controllers.navigate(Controllers.getSettingsPage());
+        } catch (Throwable e) {
+            getContext().logWarning("无法关闭商店：" + e);
+        }
+    }
+
+    /// Leaves the store if it is currently shown, e.g. when the plugin is disabled.
+    private void leaveStore() {
+        try {
+            if (storePage == null || Controllers.getDecorator() == null)
+                return;
+            if (Controllers.getDecorator().getDecorator().getContent().contains(storePage))
+                Controllers.navigate(Controllers.getRootPage());
+        } catch (Throwable ignored) {
+            // Nothing to restore.
+        }
     }
 
     // ------------------------------------------------------------------- styles
