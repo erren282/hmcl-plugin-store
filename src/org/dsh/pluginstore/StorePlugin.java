@@ -111,6 +111,16 @@ public final class StorePlugin extends HmclPlugin {
             if (storePage == null)
                 storePage = new StorePage(getContext());
 
+            // Reopening must not push a second copy: navigating to the page already on top is a
+            // no-op, but pushing it again would leave duplicates on the stack that each need
+            // their own back press.
+            var navigator = navigatorOf();
+            if (navigator != null && navigator.getCurrentPage() == storePage) {
+                storeShowing = true;
+                installBackFilter();
+                return;
+            }
+
             storeShowing = true;
             Controllers.navigate(storePage);
 
@@ -177,10 +187,12 @@ public final class StorePlugin extends HmclPlugin {
         }
     }
 
-    /// Returns to the launcher's own content.
+    /// Pops the store off the navigator's stack.
     ///
-    /// <p>Navigating away is enough: the store sits on the navigator's stack, so pushing the
-    /// settings page replaces it on screen and the arrow's own `back()` would have done the same.</p>
+    /// <p>Only pops; never pushes. Navigating to another page instead would stack that page on
+    /// top of the store (`root → store → settings`), so the next back press would reveal the
+    /// store again and it would take two presses to actually leave — the "store keeps coming
+    /// back" symptom. Popping removes the store in one step and reveals whatever was underneath.</p>
     void closeStore() {
         storeShowing = false;
         try {
@@ -190,12 +202,45 @@ public final class StorePlugin extends HmclPlugin {
                 backFilter = null;
             }
 
-            Controllers.getSettingsPage().showGameSettings(
-                    org.jackhuang.hmcl.setting.GameDirectoryManager.getSelectedRepository());
-            Controllers.navigate(Controllers.getSettingsPage());
+            popStore();
         } catch (Throwable e) {
             getContext().logWarning("无法关闭商店：" + e);
         }
+    }
+
+    /// Removes the store from the navigator, if it is the current page.
+    ///
+    /// <p>Uses the navigator's own close, which pops exactly one entry; if the store is no longer
+    /// on top (another plugin navigated meanwhile) nothing is popped, so this never destroys
+    /// unrelated pages.</p>
+    private void popStore() {
+        if (storePage == null || Controllers.getDecorator() == null)
+            return;
+
+        var navigator = navigatorOf();
+        if (navigator == null)
+            return;
+
+        if (navigator.getCurrentPage() == storePage)
+            navigator.close();
+    }
+
+    /// Returns the launcher's navigator, or `null` when it cannot be reached.
+    ///
+    /// <p>The navigator is the single child the decorator's content list holds, so it is found
+    /// by type rather than by reflection on private fields.</p>
+    ///
+    /// @return the navigator
+    private static org.jackhuang.hmcl.ui.construct.Navigator navigatorOf() {
+        try {
+            for (Node node : Controllers.getDecorator().getDecorator().getContent()) {
+                if (node instanceof org.jackhuang.hmcl.ui.construct.Navigator navigator)
+                    return navigator;
+            }
+        } catch (Throwable ignored) {
+            // The decorator may not be initialised yet.
+        }
+        return null;
     }
 
     /// Leaves the store if it is currently shown, e.g. when the plugin is disabled.
@@ -209,7 +254,7 @@ public final class StorePlugin extends HmclPlugin {
                         javafx.scene.input.MouseEvent.MOUSE_CLICKED, backFilter);
                 backFilter = null;
             }
-            Controllers.navigate(Controllers.getRootPage());
+            popStore();
         } catch (Throwable ignored) {
             // Nothing to restore.
         }
