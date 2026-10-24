@@ -1,0 +1,37 @@
+# 构建产物
+*.class
+*.jar
+!gradle/wrapper/*.jar
+out/
+out-test/
+out-probe/
+out-wrapper/
+dist/
+build/
+bin/
+
+# 打包进插件的游戏客户端等大二进制
+resources/
+
+# 启动器运行时数据
+.hmcl/
+.hmcl.json
+hmcl.json
+
+# 日志
+*.log
+hs_err_pid*
+*.hprof
+
+# IDE
+.idea/
+.vscode/
+.settings/
+.classpath
+.project
+*.iml
+
+# 系统
+.DS_Store
+Thumbs.db
+desktop.ini

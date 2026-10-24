@@ -1,0 +1,155 @@
+/*
+ * 商店插件样式
+ *
+ * 只作用于插件自己的 .store-* 类，不影响启动器原有界面。
+ */
+
+.store-page {
+    -fx-background-color: #F5F9FE;
+}
+
+.store-title {
+    -fx-font-size: 17px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #343D4A;
+}
+
+.store-subtitle {
+    -fx-font-size: 11.5px;
+    -fx-text-fill: #8C8C8C;
+}
+
+.store-status {
+    -fx-font-size: 12px;
+    -fx-text-fill: #8C8C8C;
+}
+
+.store-progress {
+    -fx-font-size: 11.5px;
+    -fx-text-fill: #1370F3;
+}
+
+.store-link {
+    -fx-font-size: 11.5px;
+    -fx-text-fill: #0B5BCB;
+    -fx-cursor: hand;
+    -fx-underline: true;
+}
+
+/* ------------------------------------------------------------------ 搜索框 */
+
+.store-search {
+    -fx-background-color: #FFFFFF;
+    -fx-background-radius: 4px;
+    -fx-border-color: #C9D6E8;
+    -fx-border-width: 1px;
+    -fx-border-radius: 4px;
+    -fx-padding: 6 10 6 10;
+    -fx-font-size: 12.5px;
+    -fx-prompt-text-fill: #A6A6A6;
+}
+
+.store-search:focused {
+    -fx-border-color: #1370F3;
+}
+
+/* -------------------------------------------------------------------- 按钮 */
+
+.store-button {
+    -fx-background-color: #FFFFFF;
+    -fx-background-radius: 4px;
+    -fx-border-color: #0B5BCB;
+    -fx-border-width: 1px;
+    -fx-border-radius: 4px;
+    -fx-padding: 5 14 5 14;
+    -fx-cursor: hand;
+}
+
+.store-button:hover {
+    -fx-background-color: #E0EAFD;
+}
+
+.store-button .store-button-text {
+    -fx-font-size: 12.5px;
+    -fx-text-fill: #0B5BCB;
+}
+
+.store-button.accent {
+    -fx-background-color: #1370F3;
+    -fx-border-color: #1370F3;
+}
+
+.store-button.accent:hover {
+    -fx-background-color: #0B5BCB;
+}
+
+.store-button.accent .store-button-text {
+    -fx-text-fill: #FFFFFF;
+}
+
+.store-button:disabled,
+.store-button.store-installed {
+    -fx-opacity: 1;
+    -fx-background-color: #F0F0F0;
+    -fx-border-color: #CCCCCC;
+    -fx-cursor: default;
+}
+
+.store-button.store-installed .store-button-text,
+.store-button:disabled .store-button-text {
+    -fx-text-fill: #8C8C8C;
+}
+
+/* -------------------------------------------------------------------- 卡片 */
+
+.store-card {
+    -fx-background-color: #FFFFFF;
+    -fx-background-radius: 5px;
+    -fx-border-color: #E4EAF2;
+    -fx-border-width: 1px;
+    -fx-border-radius: 5px;
+    -fx-padding: 12 14 12 14;
+}
+
+.store-card-name {
+    -fx-font-size: 14px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #343D4A;
+}
+
+.store-stars {
+    -fx-font-size: 12px;
+    -fx-text-fill: #E0A030;
+    -fx-background-color: #FDF6E7;
+    -fx-background-radius: 9px;
+    -fx-padding: 1 8 1 8;
+}
+
+.store-summary {
+    -fx-font-size: 12.5px;
+    -fx-text-fill: #737373;
+}
+
+.store-details {
+    -fx-padding: 6 0 0 0;
+}
+
+/* README 显示区：等宽、可滚动、浅灰底 */
+.store-readme {
+    -fx-font-family: "Microsoft YaHei UI";
+    -fx-font-size: 12px;
+    -fx-control-inner-background: #FAFBFD;
+}
+
+.store-readme .content {
+    -fx-background-color: #FAFBFD;
+}
+
+.store-scroll {
+    -fx-background-color: transparent;
+    -fx-background: transparent;
+}
+
+.store-scroll > .viewport {
+    -fx-background-color: transparent;
+}
