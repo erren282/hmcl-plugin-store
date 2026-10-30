@@ -77,9 +77,29 @@ public final class StorePage extends VBox implements
     /// Notified after an update is staged, so the host can offer a restart.
     private final Runnable onStagedListener;
 
+    /// Asked to restart the launcher once the user accepts the restart prompt.
+    private final Runnable restartAction;
+
+    /// Whether this session already offered to restart after an install.
+    ///
+    /// <p>Only the first install after the launcher started prompts: a run of installs is one
+    /// batch, and nagging after each of them would be worse than useless.</p>
+    private boolean restartPromptShown = false;
+
     public StorePage(PluginContext context, Runnable onStagedListener) {
+        this(context, onStagedListener, () -> {
+        });
+    }
+
+    /// Builds the page with a restart action used by the post-install prompt.
+    ///
+    /// @param context           the plugin context
+    /// @param onStagedListener  notified when an update is staged rather than installed
+    /// @param restartAction     restarts the launcher
+    public StorePage(PluginContext context, Runnable onStagedListener, Runnable restartAction) {
         this.context = context;
         this.onStagedListener = onStagedListener;
+        this.restartAction = restartAction;
         this.source = new StoreSource(context);
         this.installer = new StoreInstaller(context);
 
@@ -544,6 +564,11 @@ public final class StorePage extends VBox implements
                     progress.setText(description.getName() + " " + description.getVersion() + " 已安装");
                     markInstalled(button);
                     announceInstalled(description);
+
+                    // A freshly installed plugin is not loaded yet: the launcher only maps plugin
+                    // jars at start-up. Offer the restart once per session so a run of installs
+                    // does not produce a prompt for every single jar.
+                    offerRestart(description);
                 }
 
                 @Override
@@ -558,6 +583,7 @@ public final class StorePage extends VBox implements
                     // loaded, so restarting is the next step and should be one click away.
                     if (onStagedListener != null)
                         onStagedListener.run();
+                    offerRestart(null);
                 }
 
                 @Override
@@ -644,6 +670,42 @@ public final class StorePage extends VBox implements
     /// @param description the installed plugin
     private void announceInstalled(PluginDescription description) {
         context.logInfo("插件已安装：" + description.getName() + " " + description.getVersion());
+    }
+
+    /// Offers to restart the launcher so a new plugin actually loads.
+    ///
+    /// <p>The launcher maps plugin jars once, at start-up, so an installed jar stays inert until
+    /// the next launch. This is the one moment a restart is genuinely required, and it is worth
+    /// saying so — but only once per session: a user installing several plugins in a row is doing
+    /// one piece of work, and a prompt per jar would be noise.</p>
+    ///
+    /// @param description the plugin that was installed, or `null` when an update was staged
+    private void offerRestart(@org.jetbrains.annotations.Nullable PluginDescription description) {
+        if (restartPromptShown)
+            return;
+        restartPromptShown = true;
+
+        String name = description != null
+                ? description.getName() + " " + description.getVersion()
+                : "插件更新";
+
+        // The launcher's own dialog rather than a JavaFX `Alert`: same styling as every other
+        // prompt, and its action button is a JFXButton the confirm helper accepts directly.
+        com.jfoenix.controls.JFXButton restartButton =
+                new com.jfoenix.controls.JFXButton("立即重启");
+        restartButton.getStyleClass().add("dialog-accept");
+        restartButton.setOnAction(event -> {
+            context.logInfo("用户确认重启启动器以加载新插件");
+            if (restartAction != null)
+                restartAction.run();
+        });
+
+        Controllers.confirmAction(
+                name + " 已下载完成。\n\n启动器只在启动时加载插件，需要重启启动器，新插件才会生效。",
+                "需要重启启动器",
+                org.jackhuang.hmcl.ui.construct.MessageDialogPane.MessageType.QUESTION,
+                restartButton,
+                null);
     }
 
     /// Returns the installed version of a repository's plugin.

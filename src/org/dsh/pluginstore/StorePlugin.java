@@ -114,9 +114,9 @@ public final class StorePlugin extends HmclPlugin {
 
             if (storePage == null)
                 storePage = new StorePage(getContext(), () -> {
-                if (restartButton != null)
-                    restartButton.refresh();
-            });
+                    if (restartButton != null)
+                        restartButton.refresh();
+                }, this::restartForNewPlugins);
 
             // Re-navigating to the page already on top would be a no-op, but pushing it again
             // while it is already current would leave duplicates needing extra back presses.
@@ -137,8 +137,18 @@ public final class StorePlugin extends HmclPlugin {
         }
     }
 
-    /// Returns the settings page's plugin view to its plugin list.
+    /// Restarts the launcher after the user accepted the post-install prompt.
     ///
+    /// <p>Routed through [RestartButton] so both restart entry points behave the same: when an
+    /// update is staged it goes through the apply script (which waits for this process to exit and
+    /// swaps the jars), and otherwise it is a plain self restart.</p>
+    private void restartForNewPlugins() {
+        if (restartButton != null)
+            restartButton.refresh();
+        new RestartButton(getContext()).restartNow();
+    }
+
+    /// Returns the settings page's plugin view to its plugin list.    ///
     /// <p>`PluginPage.closePluginPage()` is private, so it is invoked reflectively. Failure is
     /// harmless: it only leaves the launcher showing the plugin detail view, which the user can
     /// leave with that view's own back button.</p>

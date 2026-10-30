@@ -82,6 +82,15 @@ final class RestartButton {
         return button;
     }
 
+    /// Restarts the launcher so staged updates are applied.
+    ///
+    /// <p>Exposed so the store page can restart after the user accepts its post-install prompt:
+    /// that new jar is not loaded yet, and there is nothing staged, so the plain self restart is
+    /// the right path.</p>
+    void restartNow() {
+        restart();
+    }
+
     /// Restarts the launcher so the staged update can be applied.
     ///
     /// <p>When an update is staged this does NOT call `Restarter.restartSelf()`: the apply script

@@ -58,10 +58,17 @@ $jarFile = Join-Path $distDir ("{0}_{1}.jar" -f $manifest.id, $manifest.version)
 
 $jarCmd = Get-Command jar -ErrorAction SilentlyContinue
 if ($jarCmd) {
+    # 资源目录可能是 res\ 或 resources\，两个都按“内容原样放进 jar 根”处理：
+    # res\org\dsh\pluginstore\store.css 必须以 org/dsh/pluginstore/store.css 出现在包里，
+    # 插件按类路径 /org/dsh/pluginstore/store.css 读取它。
+    $resourceDirs = @()
+    foreach ($name in @("res", "resources")) {
+        $dir = Join-Path $root $name
+        if (Test-Path $dir) { $resourceDirs += $dir }
+    }
     $resourcesArg = @()
-    if (Test-Path (Join-Path $root "resources")) {
-        # 把 resources 目录下的内容原样放进 jar 根（servers.json、celestial-core/ 等）
-        $resourcesArg = @("-C", (Join-Path $root "resources"), ".")
+    foreach ($dir in $resourceDirs) {
+        $resourcesArg += @("-C", $dir, ".")
     }
     & jar --create --file $jarFile -C $root hmcl.plugin.json -C $outDir . @resourcesArg
 } else {
@@ -70,8 +77,11 @@ if ($jarCmd) {
     New-Item -ItemType Directory -Path $staging | Out-Null
     Copy-Item (Join-Path $root "hmcl.plugin.json") $staging
     Copy-Item -Recurse (Join-Path $outDir "*") $staging
-    if (Test-Path (Join-Path $root "resources\servers.json")) {
-        Copy-Item (Join-Path $root "resources\servers.json") (Join-Path $staging "servers.json")
+    foreach ($name in @("res", "resources")) {
+        $dir = Join-Path $root $name
+        if (Test-Path $dir) {
+            Copy-Item -Recurse -Force (Join-Path $dir "*") $staging
+        }
     }
     Compress-Archive -Path (Join-Path $staging "*") -DestinationPath $jarFile -Force
     Remove-Item -Recurse -Force $staging

@@ -1,10 +1,10 @@
-﻿{
+{
   "id": "org.dsh.plugin-store",
   "name": "插件商店",
-  "version": "1.8.2",
+  "version": "1.9.0",
   "author": "第三方插件（AI 生成）",
   "description": "从 GitHub topic erren282s-launcher-plugins 自动获取插件列表，显示 star 数与简介，支持一键下载安装",
   "entry": "org.dsh.pluginstore.StorePlugin",
-  "minLauncherVersion": "3.16.4",
+  "minLauncherVersion": "3.16",
   "access": "root"
 }
