@@ -125,6 +125,12 @@ public final class StorePlugin extends HmclPlugin {
 
             Controllers.navigate(storePage);
 
+            // Entering the store is exactly when the restart entry is relevant: the user is about
+            // to install or update plugins, and installing only takes effect after a restart. Make
+            // sure the button is in place rather than relying on the start-up attempt alone.
+            if (restartButton != null)
+                restartButton.refresh();
+
             // Opening the entry made `PluginPage` switch to its plugin-detail view. That view is
             // only a launch pad for the store, and leaving it in place meant the back arrow
             // returned to a leftover "正在打开插件商店…" screen instead of the plugin list. Sending

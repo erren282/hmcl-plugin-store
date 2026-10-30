@@ -24,16 +24,29 @@ final class RestartButton {
     /// Style class used to recognise the injected button.
     private static final String STYLE = "store-restart-button";
 
+    /// Style class of the wrapper node placed in the title bar.
+    ///
+    /// <p>Separate from [#STYLE] because the row-identification check in [#isWindowButtonRow]
+    /// has to skip known additions rather than fail on them.</p>
+    private static final String WRAPPER_STYLE = "store-restart-button-container";
+
+    /// Style class of the download hub's title bar wrapper.
+    ///
+    /// <p>Used to place the restart button immediately to its left, so the two title bar entries
+    /// this plugin family adds always sit together in a stable order.</p>
+    private static final String DOWNLOAD_HUB_WRAPPER = "download-hub-button-container";
+
     private final org.jackhuang.hmcl.plugin.PluginContext context;
 
     RestartButton(org.jackhuang.hmcl.plugin.PluginContext context) {
         this.context = context;
     }
 
-    /// Shows the restart button when updates are pending.
+    /// Shows the restart button.
     ///
-    /// <p>Called after staging an update, and once at start-up for updates carried over from a
-    /// previous session.</p>
+    /// <p>Visible for the whole session, not only while an update is staged: restarting is a
+    /// normal thing to want, and a button that comes and goes is hard to find. When an update is
+    /// waiting, the tooltip says so.</p>
     ///
     /// <p>The launcher builds its window after plugins are enabled, so at `onEnable` time the
     /// scene and the title bar may not exist yet. A single attempt therefore silently did nothing
@@ -74,22 +87,49 @@ final class RestartButton {
                     }
                 }
 
-                if (!pending) {
-                    if (existing != null)
-                        buttons.getChildren().remove(existing);
-                    return;
+                if (existing == null) {
+                    existing = createButton();
+                    buttons.getChildren().add(insertIndex(buttons), existing);
+                    context.logInfo("已添加重启按钮" + (pending ? "（有待应用的插件更新）" : ""));
                 }
 
-                if (existing != null)
-                    return;
-
-                // Index 0 puts it immediately left of the minimise button.
-                buttons.getChildren().add(0, createButton());
-                context.logInfo("已添加重启按钮（有待应用的插件更新）");
+                updateTooltip(existing, pending);
             } catch (Throwable e) {
                 context.logWarning("无法添加重启按钮：" + e);
             }
         });
+    }
+
+    /// Returns the index the restart button should occupy.
+    ///
+    /// <p>It goes immediately left of the download hub button when that one is present, and at the
+    /// far left of the window-button group otherwise — so it stays next to the download entry in a
+    /// fixed order instead of drifting as buttons are added.</p>
+    ///
+    /// @param buttons the title bar's window-button row
+    /// @return the insertion index
+    private static int insertIndex(HBox buttons) {
+        for (int i = 0; i < buttons.getChildren().size(); i++) {
+            Node child = buttons.getChildren().get(i);
+            if (child.getStyleClass().contains(DOWNLOAD_HUB_WRAPPER)
+                    || child.getStyleClass().contains("download-hub-button"))
+                return i;
+        }
+        return 0;
+    }
+
+    /// Updates the tooltip to reflect whether an update is waiting.
+    ///
+    /// @param node    the injected button
+    /// @param pending whether an update is staged
+    private void updateTooltip(Node node, boolean pending) {
+        try {
+            org.jackhuang.hmcl.ui.FXUtils.installFastTooltip(node, pending
+                    ? "重启启动器以应用已下载的插件更新"
+                    : "重启启动器");
+        } catch (Throwable ignored) {
+            // A tooltip is cosmetic.
+        }
     }
 
     /// Schedules the next attempt after a short delay.
@@ -110,10 +150,17 @@ final class RestartButton {
         button.setFocusTraversable(false);
         button.setGraphic(org.jackhuang.hmcl.ui.SVG.REFRESH
                 .createIcon(org.jackhuang.hmcl.theme.Themes.titleFillProperty()));
-        button.getStyleClass().addAll("jfx-decorator-button", STYLE);
-        org.jackhuang.hmcl.ui.FXUtils.installFastTooltip(button, "重启启动器以完成插件更新");
+        button.getStyleClass().add("jfx-decorator-button");
+        org.jackhuang.hmcl.ui.FXUtils.installFastTooltip(button, "重启启动器");
         button.setOnAction(event -> restart());
-        return button;
+
+        // The marker goes on the wrapper, which is the node actually added to the title bar: the
+        // download hub's button does the same, and both sides look for the wrapper's style class
+        // when deciding where to insert and whether the button already exists.
+        javafx.scene.layout.StackPane container = new javafx.scene.layout.StackPane(button);
+        container.getStyleClass().addAll(WRAPPER_STYLE, STYLE);
+        container.setPickOnBounds(false);
+        return container;
     }
 
     /// Restarts the launcher so staged updates are applied.
@@ -213,6 +260,12 @@ final class RestartButton {
             return false;
 
         for (Node child : box.getChildren()) {
+            // Skip the wrappers plugin buttons bring: they are not decorator buttons themselves,
+            // and counting them as foreign would make the row unrecognisable once a button was
+            // added — which stopped the button from ever being found again after the first add.
+            if (child.getStyleClass().contains(WRAPPER_STYLE)
+                    || child.getStyleClass().contains(DOWNLOAD_HUB_WRAPPER))
+                continue;
             if (!child.getStyleClass().contains("jfx-decorator-button"))
                 return false;
         }
