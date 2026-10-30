@@ -34,12 +34,35 @@ final class RestartButton {
     ///
     /// <p>Called after staging an update, and once at start-up for updates carried over from a
     /// previous session.</p>
+    ///
+    /// <p>The launcher builds its window after plugins are enabled, so at `onEnable` time the
+    /// scene and the title bar may not exist yet. A single attempt therefore silently did nothing
+    /// and the button never appeared, leaving staged updates with no way to be applied — the
+    /// refresh is retried for a while instead, and gives up long after the window is up.</p>
     void refresh() {
+        refreshAttempt(0);
+    }
+
+    /// How many times the title bar is polled before giving up, and how far apart.
+    private static final int REFRESH_ATTEMPTS = 40;
+    private static final long REFRESH_INTERVAL_MS = 250;
+
+    /// One attempt at injecting the button, retried until the title bar exists.
+    ///
+    /// @param attempt how many attempts have already failed
+    private void refreshAttempt(int attempt) {
         Platform.runLater(() -> {
             try {
                 Node container = findWindowButtons();
-                if (!(container instanceof HBox buttons))
+                if (!(container instanceof HBox buttons)) {
+                    // The window is not up yet: retry rather than give up, or a start-up refresh
+                    // would never reach a title bar that appears a moment later.
+                    if (attempt < REFRESH_ATTEMPTS)
+                        scheduleRetry(attempt + 1);
+                    else
+                        context.logWarning("始终找不到标题栏，未添加重启按钮");
                     return;
+                }
 
                 boolean pending = !new PendingUpdates(context).list().isEmpty();
 
@@ -62,10 +85,21 @@ final class RestartButton {
 
                 // Index 0 puts it immediately left of the minimise button.
                 buttons.getChildren().add(0, createButton());
+                context.logInfo("已添加重启按钮（有待应用的插件更新）");
             } catch (Throwable e) {
                 context.logWarning("无法添加重启按钮：" + e);
             }
         });
+    }
+
+    /// Schedules the next attempt after a short delay.
+    ///
+    /// @param attempt the attempt number to run next
+    private void scheduleRetry(int attempt) {
+        javafx.animation.PauseTransition pause = new javafx.animation.PauseTransition(
+                javafx.util.Duration.millis(REFRESH_INTERVAL_MS));
+        pause.setOnFinished(event -> refreshAttempt(attempt));
+        pause.play();
     }
 
     /// Builds the restart button, styled like the launcher's window buttons.
