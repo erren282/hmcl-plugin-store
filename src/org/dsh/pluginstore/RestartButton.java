@@ -118,13 +118,64 @@ final class RestartButton {
         return 0;
     }
 
+    /// Enables or disables the restart button.
+    ///
+    /// <p>Used while a game is launching. Restarting then would kill the launcher mid-launch and
+    /// take the starting game down with it — the process is still being set up, and the launcher
+    /// is the parent that holds the log window and the exit hook.</p>
+    ///
+    /// <p>The wrapper is what sits in the title bar and receives the click, so the state goes
+    /// there; the opacity change is what makes it look disabled.</p>
+    ///
+    /// @param enabled whether the button should respond to clicks
+    void setEnabled(boolean enabled) {
+        Platform.runLater(() -> {
+            try {
+                Node wrapper = findExistingButton();
+                if (wrapper == null)
+                    return;
+                wrapper.setDisable(!enabled);
+                wrapper.setOpacity(enabled ? 1.0 : 0.45);
+                updateTooltip(wrapper, !new PendingUpdates(context).list().isEmpty(), enabled);
+            } catch (Throwable e) {
+                context.logWarning("无法切换重启按钮状态：" + e);
+            }
+        });
+    }
+
+    /// Finds the already-injected button, without creating it.
+    ///
+    /// @return the wrapper node, or `null` when the title bar is not up yet
+    private static Node findExistingButton() {
+        Node container = findWindowButtons();
+        if (!(container instanceof HBox buttons))
+            return null;
+        for (Node child : buttons.getChildren()) {
+            if (child.getStyleClass().contains(STYLE))
+                return child;
+        }
+        return null;
+    }
+
     /// Updates the tooltip to reflect whether an update is waiting.
     ///
     /// @param node    the injected button
     /// @param pending whether an update is staged
+    /// @param enabled whether the button is currently usable
     private void updateTooltip(Node node, boolean pending) {
+        updateTooltip(node, pending, true);
+    }
+
+    /// Updates the tooltip, including the "busy launching" state.
+    ///
+    /// @param node    the injected button
+    /// @param pending whether an update is staged
+    /// @param enabled whether the button is currently usable
+    private void updateTooltip(Node node, boolean pending, boolean enabled) {
         try {
-            org.jackhuang.hmcl.ui.FXUtils.installFastTooltip(node, pending
+            org.jackhuang.hmcl.ui.FXUtils.installFastTooltip(node, !enabled
+                    ? "游戏启动中，暂时无法重启启动器"
+                    : pending
                     ? "重启启动器以应用已下载的插件更新"
                     : "重启启动器");
         } catch (Throwable ignored) {

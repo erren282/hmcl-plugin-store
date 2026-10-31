@@ -256,8 +256,26 @@ public final class StorePlugin extends HmclPlugin {
             getContext().logWarning("无法初始化重启按钮：" + e);
         }
 
+        // Restarting while the game is starting would kill the launcher mid-launch and take the
+        // starting game down with it, so the button is disabled for the duration.
+        try {
+            org.jackhuang.hmcl.plugin.PluginMenuService.registerLaunchListener(this::onLaunchState);
+        } catch (Throwable e) {
+            getContext().logWarning("无法注册启动状态监听：" + e);
+        }
+
         getContext().logInfo("插件商店已启用（设置 → 插件 → 插件页面首位），数据源：GitHub topic "
                 + StoreSource.TOPIC);
+    }
+
+    /// Disables the restart button while a game launch is in flight.
+    ///
+    /// @param event the launch state change
+    private void onLaunchState(org.jackhuang.hmcl.event.GameLaunchStateEvent event) {
+        boolean launching =
+                event.getPhase() == org.jackhuang.hmcl.event.GameLaunchStateEvent.Phase.STARTING;
+        if (restartButton != null)
+            restartButton.setEnabled(!launching);
     }
 
     /// Returns the helper that manages the title bar's restart button.
